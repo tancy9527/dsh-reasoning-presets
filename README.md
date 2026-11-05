@@ -253,7 +253,7 @@ node bin/cli.mjs fix --write    # 目录优先 + 家族兜底，一次补齐
 - **滑条（客户端半边）**：`lib/client.js` 用假 `window.__ModuleLoader__` + 假 React 在 Node 里装配过一遍——
   bundle id、`inject` 五个服务、插槽 `conversation.input.right` 上的注册（id/order/label）、`apply()` 在
   「目录服务缺失 / 注册抛错」两种故障下都不外泄异常，全部通过；档位快照解析、拖拽落点映射、写回入参由
-  7 项纯函数断言覆盖。它**不改写官方菜单 DOM**，只读写官方 `modelDirectories` 服务。
+  8 项断言覆盖。它**不改写官方菜单 DOM**，只读写官方 `modelDirectories` 服务。
 
 ### ❓ FAQ
 
@@ -276,7 +276,7 @@ A：不需要。本插件的客户端半边会在输入框右下角画一条可�
 两者也可以共存（对方改的是模型菜单那一行，我们加的是输入框工具行），互不干扰。滑条只在「该模型确实有 ≥ 2 个档位」时出现。
 
 **Q：为什么我的 `node --test` 报 `spawn EPERM`？**
-A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等七个文件，共 39 项断言。
+A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等七个文件，共 40 项断言。
 
 **Q：已经装过旧版，再用同一个 `github:` 地址升级时报 `ambiguous-install`？**
 A：这是 DSH 插件管理器的判定方式导致的：它靠「profile `package.json` 里依赖的 spec 字符串有没有变」来识别本次装的是哪个包。
@@ -298,7 +298,7 @@ lib/render.mjs    文本与 markdown 渲染
 lib/index.mjs     插件入口（reasoning_presets 工具 + 启动自动补齐）
 lib/client.js     客户端半边：输入框工具行上的可拖动滑条（零构建、不改官方 DOM）
 bin/cli.mjs       命令行（root / list / audit / check / fix / init）
-test/             node:test 用例（levels / audit / patch / recipes / autofix / check / client，39 项）
+test/             node:test 用例（levels / audit / patch / recipes / autofix / check / client，40 项）
 docs/PLUMBING.md  机制详解：reasoningEfforts 语义、目录继承、compat 白名单、各家 wire 差异
 ```
 
@@ -578,7 +578,7 @@ No. The client half of this plugin draws a draggable slider in the composer's ri
 control). The slider only appears for models that really expose ≥ 2 levels.
 
 **`node --test` fails with `spawn EPERM`?**
-That happens inside sandboxed environments. Run the files directly: `node test/levels.test.mjs`, `node test/audit.test.mjs`, `node test/patch.test.mjs`, `node test/recipes.test.mjs`, `node test/autofix.test.mjs`, `node test/check.test.mjs`, `node test/client.test.mjs` — 39 assertions total.
+That happens inside sandboxed environments. Run the files directly: `node test/levels.test.mjs`, `node test/audit.test.mjs`, `node test/patch.test.mjs`, `node test/recipes.test.mjs`, `node test/autofix.test.mjs`, `node test/check.test.mjs`, `node test/client.test.mjs` — 40 assertions total.
 
 **Upgrading an existing install from the same `github:` spec fails with `ambiguous-install`.**
 That is how DSH's installer identifies the target: it diffs the spec strings in the profile's `package.json`. Reinstalling the
@@ -600,7 +600,7 @@ lib/render.mjs    text and markdown rendering
 lib/index.mjs     plugin entry (reasoning_presets tool + startup auto-repair)
 lib/client.js     client half: draggable slider in the composer tool row (no build step, no DOM rewriting)
 bin/cli.mjs       CLI (root / list / audit / check / fix / init)
-test/             node:test suites (levels / audit / patch / recipes / autofix / check / client, 39 assertions)
+test/             node:test suites (levels / audit / patch / recipes / autofix / check / client, 40 assertions)
 docs/PLUMBING.md  internals: reasoningEfforts semantics, inheritance, compat gates, wire differences
 ```
 

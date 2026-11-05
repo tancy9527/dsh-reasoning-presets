@@ -178,3 +178,14 @@ test("selectionFor：写回入参只带 provider/model/reasoningEffort", async (
   assert.deepEqual(selectionFor(levels, undefined), { provider: "claude", model: "claude-opus-5" });
   assert.equal(selectionFor({ current: null }, "max"), null);
 });
+
+test("宿主半边自检：本仓库的 dsh.client / exports[./client] / 产物内容齐全", async () => {
+  const { auditClientBundle } = await import("../lib/index.mjs");
+  const warnings = [];
+  const debug = [];
+  auditClientBundle({ logger: { warn: (line) => warnings.push(line), debug: (line) => debug.push(line) } });
+  assert.deepEqual(warnings, [], `不应有自检告警：${warnings.join("；")}`);
+  assert.ok(debug.some((line) => line.includes("自检通过")));
+  // 连自检本身也不能抛错
+  assert.doesNotThrow(() => auditClientBundle({}));
+});
