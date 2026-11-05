@@ -127,7 +127,7 @@ async function main() {
 		fail(`找不到 ${file}\n用 --profile 或 --patch 指定，或先在 DSH 里配置一个模型。`);
 		return;
 	}
-	const patch = await readPatchFile(file, dshRoot);
+	const patch = await readPatchFile(file, catalog.origin);
 
 	if (command === "audit") {
 		const report = auditDoc(patch.doc, catalog);
@@ -169,7 +169,7 @@ async function main() {
 			process.stdout.write("\n加上 --write 才会真正写入（会先生成 .bak 备份）。\n");
 			return;
 		}
-		const nextText = await stringifyPatch(result.doc, patch.header, dshRoot);
+		const nextText = await stringifyPatch(result.doc, patch.header, catalog.origin);
 		const backup = await writePatchFile(file, nextText);
 		process.stdout.write(renderChanges(result, { dryRun: false, file }));
 		if (backup) process.stdout.write(`\n原文件已备份：${backup}\n`);
