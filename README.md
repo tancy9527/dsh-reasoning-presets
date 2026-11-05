@@ -225,6 +225,12 @@ A：`--write` 每次都会先存 `cordis.patch.yml.<ISO时间戳>.bak`；dry-run
 **Q：为什么我的 `node --test` 报 `spawn EPERM`？**
 A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等五个文件，共 27 项断言。
 
+**Q：已经装过旧版，再用同一个 `github:` 地址升级时报 `ambiguous-install`？**
+A：这是 DSH 插件管理器的判定方式导致的：它靠「profile `package.json` 里依赖的 spec 字符串有没有变」来识别本次装的是哪个包。
+同一个 `github:` 地址重装时字符串没变，它就认不出目标、报 `ambiguous-install`——但 pnpm 已经把 `node_modules` 里的文件换成了新版。
+两个办法：① 直接重启 DSH（磁盘上已经是新版，重启就生效）；② 想让它登记成一次安装，就换个能改变 spec 的写法，例如
+`github:tancy9527/dsh-reasoning-presets#v1.1.0`，或先移除再装。
+
 ### 🗂 仓库结构
 
 ```
@@ -460,6 +466,12 @@ Every `--write` saves `cordis.patch.yml.<ISO timestamp>.bak` first. Always dry-r
 
 **`node --test` fails with `spawn EPERM`?**
 That happens inside sandboxed environments. Run the files directly: `node test/levels.test.mjs`, `node test/audit.test.mjs`, `node test/patch.test.mjs`, `node test/recipes.test.mjs`, `node test/autofix.test.mjs` — 27 assertions total.
+
+**Upgrading an existing install from the same `github:` spec fails with `ambiguous-install`.**
+That is how DSH's installer identifies the target: it diffs the spec strings in the profile's `package.json`. Reinstalling the
+same `github:` URL leaves the string unchanged, so it cannot name the package — yet pnpm has already swapped the files in
+`node_modules`. Two fixes: ① just restart DSH (the new version is already on disk); ② or change the spec so it registers as an
+install, e.g. `github:tancy9527/dsh-reasoning-presets#v1.1.0`, or remove it first and install again.
 
 ### 🗂 Layout
 
