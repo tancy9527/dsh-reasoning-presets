@@ -167,6 +167,7 @@ function makeOpenModelMenu(doc, { labels = ["模型", "推理等级"], values = 
     const item = doc.createElement("button");
     item.setAttribute("role", "menuitem");
     const label = doc.createElement("span");
+    label.setAttribute("class", "cellLabel");
     label.textContent = labels[index];
     item.appendChild(label);
     if (typeof values[index] === "string") {
