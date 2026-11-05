@@ -71,10 +71,16 @@ node bin/cli.mjs fix --write   # 4. 真写，自动生成 cordis.patch.yml.<时�
 
 仓库已经带了 `cordis.patch.yml` 与 `dsh.bundle.patch`，装进 profile 后会多一个 `reasoning_presets` 工具，直接让模型自己体检/修复：
 
-```jsonc
-// profile 的 package.json → dsh.bundles
-"dsh-reasoning-presets"
 ```
+plugin_manager install_bundle  target: github:tancy9527/dsh-reasoning-presets
+```
+
+（或让 agent 帮你调这条。装完 `package.json` 里会出现 `"dsh-reasoning-presets": "github:tancy9527/dsh-reasoning-presets"`，
+并且 node_modules 里落地的是本仓库的发布文件。）
+
+⚠️ **bundle 是「启动时装载」的**：安装/升级后 DSH 会返回 `application: restart-required`，**重启一次 DSH**
+那个 `reasoning_presets` 工具才会出现在会话里。只想要滑条、不想要工具的话，不必装 bundle —— 用路径 A 的 CLI 即可，
+改完 `cordis.patch.yml` 由 HMR 热更，**不重启就能看到菜单里的档位**。
 
 工具参数：`action`（`list` / `audit` / `fix` / `init`）、`providers[]`、`effort`、`write`、`applyDefault`、`profile`、`dshRoot`。
 
@@ -185,6 +191,10 @@ node bin/cli.mjs fix --write    # 目录优先 + 家族兜底，一次补齐
   —— 低档 2048，中/高/极高/最大 16384（pi-ai 的 anthropic 预算表上限），选「关闭」则完全不发 `thinking`。
 - 想让 Claude 用新版的 `thinking:{type:"adaptive"}` + `output_config.effort`，需要**路由 id 与目录同名**（`anthropic`）
   才能继承 `compat.forceAdaptiveThinking`；`claude` 这种自定义 id 只能走上面那条 `budget_tokens` 路径。
+- 安装链路也已实跑：`install_bundle github:tancy9527/dsh-reasoning-presets` → pnpm 拉包成功、profile 的
+  `package.json` 指向 github 规格、`node_modules/dsh-reasoning-presets` 里是仓库文件；把装好的包 import 进来、
+  用假 ctx 调 `apply()`，`reasoning_presets` 工具注册成功，`audit`/`list` 都能正常跑出报告
+  （agent 侧调用需重启 DSH 一次，见路径 B 的说明）。
 
 ### ❓ FAQ
 
@@ -195,7 +205,9 @@ A：「Default」不是档位，是 `defaultEffort` 缺失时 DSH 自动补的�
 A：先跑 `fix`——它会按「家族规则」自动认出 `glm-*` / `claude-*` 这类型号并补齐协议与档位；目录里有的型号永远优先用目录信息。只有两边都认不出的型号（比如 `ghost-9000`）才需要你手写 `reasoningEfforts`，`audit` 会把它们单独列成「目录未收录 · 需手写」。
 
 **Q：改完要重启 DSH 吗？**
-A：不用。profile 的 `cordis.patch.yml` 在 HMR 监听列表里，保存即热更新。
+A：改配置文件不用——profile 的 `cordis.patch.yml` 在 HMR 监听列表里，保存即热更新，菜单里马上就有档位。
+但**安装/升级本仓库这个 bundle** 需要重启一次：新包是启动时装载的，安装接口会返回 `application: restart-required`，
+重启后 `reasoning_presets` 工具才可调用。
 
 **Q：改坏了怎么办？**
 A：`--write` 每次都会先存 `cordis.patch.yml.<ISO时间戳>.bak`；dry-run 永远可以先用。
@@ -278,10 +290,16 @@ Install globally: `npm i -g .` → then `dsh-reasoning audit`.
 
 The repo ships `cordis.patch.yml` + `dsh.bundle.patch`, so installing it into a profile exposes a `reasoning_presets` tool — let the agent audit and repair itself:
 
-```jsonc
-// profile package.json → dsh.bundles
-"dsh-reasoning-presets"
 ```
+plugin_manager install_bundle  target: github:tancy9527/dsh-reasoning-presets
+```
+
+(Or ask your agent to run it.) The profile's `package.json` then points at the GitHub spec and
+`node_modules/dsh-reasoning-presets` holds this repo's published files.
+
+⚠️ **Bundles load at startup.** Installation/upgrade returns `application: restart-required`, so **restart DSH once**
+before the `reasoning_presets` tool shows up in a session. If you only want the slider and no tool, skip the bundle:
+use path A — the CLI edits `cordis.patch.yml`, HMR hot-reloads it, and the menu levels appear without a restart.
 
 Tool arguments: `action` (`list` / `audit` / `fix` / `init`), `providers[]`, `effort`, `write`, `applyDefault`, `profile`, `dshRoot`.
 
@@ -397,6 +415,10 @@ Real requests through the exact code path DSH uses (`dsh-llm-pi-ai` → pi-ai
 - To get the newer `thinking:{type:"adaptive"}` + `output_config.effort` shape for Claude, the route id must
   match the catalog (`anthropic`) so it inherits `compat.forceAdaptiveThinking`; a custom id like `claude`
   only ever takes the `budget_tokens` path.
+- Installation was exercised too: `install_bundle github:tancy9527/dsh-reasoning-presets` resolved and downloaded the
+  package, the profile's `package.json` now points at the GitHub spec, and importing the installed copy with a stub
+  ctx registered `reasoning_presets` and ran `audit` / `list` successfully. The agent-facing call needs one DSH restart
+  (see path B) because bundles load at startup.
 
 ### ❓ FAQ
 
@@ -407,7 +429,9 @@ It is not a level. When `defaultEffort` is missing, DSH adds a pseudo-choice tha
 Run `fix` first — family recipes recognise `glm-*` / `claude-*` style ids and fill in protocol, levels and a default; catalog entries always win when they exist. Only models neither side knows (say `ghost-9000`) need hand-written `reasoningEfforts`, and `audit` lists them as "not in catalog · write it yourself".
 
 **Do I need to restart DSH?**
-No. The profile `cordis.patch.yml` is watched; saving hot-reloads it.
+For config edits, no — the profile `cordis.patch.yml` is watched and hot-reloads, so the menu levels appear immediately.
+**Installing/upgrading this bundle does** require one restart (`application: restart-required`); the
+`reasoning_presets` tool only becomes callable after that.
 
 **What if I break something?**
 Every `--write` saves `cordis.patch.yml.<ISO timestamp>.bak` first. Always dry-run first.
