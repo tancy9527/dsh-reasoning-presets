@@ -92,6 +92,15 @@ const api = request.api ?? base?.api ?? routeApi;
 `models` 列表另外还有一个语义：**它会替换掉未列出的模型**。想只暴露部分模型时用它；
 想全都要就别写 `models`。
 
+### 目录里没有的型号：家族规则
+
+继承落空之后还有一层兜底：`lib/recipes.mjs` 的「家族规则」按型号命名规律补知识
+（`glm-5.3*` → `openai-completions` + `thinkingFormat: zai` + 低/高/最大；`claude-*` → `anthropic-messages` + 六档）。
+它在 `fix` 里的优先级是：**目录按 id 命中 > 家族规则 > 不猜**，并且只补不覆盖手写值。
+
+所以「自定义路由 + 中转站型号」现在只有一种情况需要人介入：型号既不在目录、也不匹配任何家族
+（例如私有网关的 `ghost-9000`），这时 `audit` 会标成「目录未收录 · 需手写」。
+
 ---
 
 ## 4. `compat` 白名单：写错一个字都会被拒
@@ -140,6 +149,33 @@ if (compat.thinkingFormat === "zai" && model.reasoning) {
 
 `openai-responses` 走的是另一条路（`pi-ai/dist/api/openai-responses.js`）：发 `reasoning: { effort, summary: "auto" }`，
 且 URL 是 `baseURL + "/responses"`。
+
+### `anthropic-messages` 的两条路：预算 vs adaptive
+
+Claude 的思考参数不是 `reasoning_effort`，而是 `thinking` 对象。pi-ai 有两种写法，**由 `compat` 决定走哪条**：
+
+```js
+// streamSimple：有没有 reasoning，先决定要不要思考
+if (!options?.reasoning) thinkingEnabled = false;
+
+// 路线一：adaptive（新）
+model.compat?.forceAdaptiveThinking === true
+  → thinking = { type: "adaptive", display: "summarized" }
+    output_config = { effort: mapThinkingLevelToEffort(model, level) }   // minimal/low→low, medium→medium, high→high
+
+// 路线二：预算（旧，兼容性最好）
+thinking = { type: "enabled", budget_tokens: 调整后的预算, display: "summarized" }
+```
+
+`budget_tokens` 由 `adjustMaxTokensForThinking(maxTokens, model.maxTokens, level, budgets)` 算，
+pi-ai 内置表大致是 **low → 2048、medium/high/xhigh/max → 16384**（上限受 `maxTokens - 1024` 约束）。
+也就是说：走预算路线时，**高 / 极高 / 最大三档发出去是同一个值**——想真正区分，只能走 adaptive 路线，
+而 adaptive 需要模型描述符带 `compat.forceAdaptiveThinking`，这个字段只能靠**路由 id 与目录同名**继承
+（dsh 的 compat 白名单里没有它，写不进配置文件）。
+
+实测（拦截 fetch 抓请求体）：自定义路由 `claude` 发的是
+`thinking:{type:"enabled",budget_tokens:2048}` (low) / `{...16384}` (high, xhigh, max)；
+选「关闭」时 dsh 把 `"off"` 转成 `undefined`，于是**完全不发 `thinking`**。
 
 ---
 
