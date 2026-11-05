@@ -235,6 +235,9 @@ if (reasoning.defaultEffort === void 0) {
 ## 9. 如何自己验证（不改任何东西）
 
 ```console
+# 0. 一句结论：配置是否还跟目录/家族规则一致（脏则 exit 1，可进 CI）
+node bin/cli.mjs check
+
 # 1. 目录侧：这个型号到底支持哪些档位
 node bin/cli.mjs list --all | Select-String -Pattern 'glm-5.3'
 
@@ -250,3 +253,22 @@ node bin/cli.mjs audit --json
 （不是 `reasoningEffort`），内部会用 `clampThinkingLevel()` 把 `"off"` 转成 `undefined`；
 真正写 wire 字段的是 `stream()` 里的 `buildParams()`。DSH 侧的 `profileOptions()` 同样把 `"off"` 转成 `undefined`。
 两边一致，所以"关闭"= 不发参数字段。
+
+## 10. `check` 的口径：什么算「漂移」
+
+`check` 不写盘、不打网络，只把 `audit` 的结论压成一个布尔：
+
+| 情况 | 默认（`check`） | `--strict` |
+| --- | --- | --- |
+| 型号缺 `reasoningEfforts`，但目录/家族规则能推出档位（`MISSING_LEVELS`） | ✗ 脏 | ✗ 脏 |
+| 型号既不在目录、家族规则也不认识（`UNKNOWN_MODEL`） | ✗ 脏 | ✗ 脏 |
+| 路由没有默认档，且型号**不支持**关闭思考（`NO_DEFAULT`，warn） | ✗ 脏 | ✗ 脏 |
+| 路由没有默认档，但型号都能关闭思考（`NO_DEFAULT`，info：菜单多一个 Default 伪项） | ✓ 干净 | ✗ 脏 |
+| 路由级 `NO_MODELS` / `NO_API` / `NO_LEVELS` / `BAD_DEFAULT` | ✗ 脏 | ✗ 脏 |
+
+口径理由：CI 只应该被「会导致没滑块或 400」的问题拦住，不该因为「菜单多一项 Default」就红。
+`--strict` 给要求更严的仓库用（例如把 `cordis.patch.yml` 当单一事实来源、要求零告警）。
+
+输出契约：干净 → exit 0；脏 → exit 1；`--json` 给 `{ clean, strict, drift[], summary }`，
+每一项有 `code`（`MISSING_LEVELS` / `NO_DEFAULT` / …）、`provider`、可选 `model`、`message`、`severity`。
+

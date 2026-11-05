@@ -48,6 +48,7 @@ flowchart LR
 - 🧭 **查询**：`list` 打印 41 家供应商的真实档位矩阵（也生成 `docs/MATRIX.md`）
 - 🧬 **家族规则**：目录里查不到的型号（中转站的 `claude-sonnet-5-5`、新的 `glm-5.3-flashx`）按厂商家族补齐协议 / 档位 / 默认档，不用翻文档
 - 🛡 **安全**：默认 dry-run；`--write` 前自动备份 `.bak`；`apply()` 绝不抛错，不会把 DSH 卡成「Failed to load plugins」
+- 🚦 **可进 CI**：`dsh-reasoning check` 只回答「干不干净」，有漂移就 exit 1 —— 配置和模型目录脱节时构建直接失败
 
 ### 🚀 四条使用路径
 
@@ -56,6 +57,14 @@ flowchart LR
 需要 Node ≥ 20。DSH 的 profile 补丁在 HMR 监听列表里，**写完自动生效，不用重启**。
 
 ```bash
+# 不想 clone，直接装一份（推荐）
+npm i -g dsh-reasoning-presets
+# 或者临时用一次
+npx dsh-reasoning-presets audit
+# npm 上取不到时（未发布 / 镜像同步慢），直接从 GitHub 装
+npm i -g github:tancy9527/dsh-reasoning-presets
+
+# 从源码跑
 git clone https://github.com/tancy9527/dsh-reasoning-presets.git
 cd dsh-reasoning-presets
 
@@ -65,7 +74,26 @@ node bin/cli.mjs fix       # 3. 预演修复（不写盘）
 node bin/cli.mjs fix --write   # 4. 真写，自动生成 cordis.patch.yml.<时间戳>.bak
 ```
 
-想全局可用：`npm i -g .`，之后直接 `dsh-reasoning audit`。
+装成全局后直接：`dsh-reasoning audit`、`dsh-reasoning check`、`dsh-reasoning fix --write`。
+
+#### 路径 A+：放进 CI（drift 即失败）
+
+`check` 不做修改，只判断配置是否还跟得上目录 / 家族规则；脏就非零退出，适合 pre-commit 或流水线：
+
+```bash
+dsh-reasoning check                    # 干净 exit 0，有漂移 exit 1
+dsh-reasoning check --strict           # 连「提示级」（如菜单多出 Default 伪项）也算脏
+dsh-reasoning check --json             # 机器可读：{ clean, strict, drift[], summary }
+```
+
+```yaml
+# .github/workflows/reasoning.yml（示例）
+- run: npm i -g dsh-reasoning-presets
+- run: dsh-reasoning check --patch ./ci/cordis.patch.yml
+```
+
+> 在 CI 里用 `--patch` 指向仓库里受版本管理的补丁文件即可，不需要装 DSH。
+> 需要 pi-ai 目录来推断档位：CI 里把 `--dsh-root` 指到一份装有 `@earendil-works/pi-ai` 的目录（或先 `npm i @earendil-works/pi-ai`）。
 
 #### 路径 B：作为 DSH 插件（小白推荐：装 → 重启 → 滑条出现）
 
@@ -174,6 +202,7 @@ node bin/cli.mjs fix --write    # 目录优先 + 家族兜底，一次补齐
 | `dsh-reasoning root` | 打印探测到的 DSH 安装目录、pi-ai 目录、profile 补丁路径 |
 | `dsh-reasoning list [--all] [--markdown]` | 供应商档位矩阵（默认只列推荐路由） |
 | `dsh-reasoning audit [--markdown] [--json]` | 体检当前 profile，列出问题与可修项 |
+| `dsh-reasoning check [--strict] [--json]` | 漂移检查：干净 exit 0，有漂移 exit 1（给 CI / pre-commit） |
 | `dsh-reasoning fix [--write] [--effort high] [--no-default]` | 补齐配置；默认 dry-run |
 | `dsh-reasoning init <id…> [--write]` | 新建继承目录的路由 |
 
@@ -205,6 +234,9 @@ node bin/cli.mjs fix --write    # 目录优先 + 家族兜底，一次补齐
   → 一条日志「已自动补齐 11 处推理等级配置」，落盘后 5 个 GLM 型号 + 5 个 Claude 型号都有档位、两条路由都有默认档，
   同时生成 `.bak` 与 `cordis.patch.reasoning-presets.log`；补齐结果用 `dsh-llm-pi-ai` 的 `Config` 校验通过。
   再启动一次则返回 `clean`、文件字节不变（幂等）。
+- **`check` 也在真实配置上跑过**：当前 profile → `✓ 配置干净`，`exit=0`；把同一份配置的档位声明全部剥掉后 →
+  `✗ 有 11 处需要处理`（10 条 `MISSING_LEVELS` + 2 条 `NO_DEFAULT` 中的路由级），`exit=1`。
+  默认只拦「该修 / 有风险」的（warn 级），`--strict` 才会把「只是菜单多一个 Default 伪项」这类提示级也算脏。
 
 ### ❓ FAQ
 
@@ -223,7 +255,7 @@ A：改配置文件不用——profile 的 `cordis.patch.yml` 在 HMR 监听列�
 A：`--write` 每次都会先存 `cordis.patch.yml.<ISO时间戳>.bak`；dry-run 永远可以先用。
 
 **Q：为什么我的 `node --test` 报 `spawn EPERM`？**
-A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等五个文件，共 27 项断言。
+A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等六个文件，共 32 项断言。
 
 **Q：已经装过旧版，再用同一个 `github:` 地址升级时报 `ambiguous-install`？**
 A：这是 DSH 插件管理器的判定方式导致的：它靠「profile `package.json` 里依赖的 spec 字符串有没有变」来识别本次装的是哪个包。
@@ -238,12 +270,13 @@ lib/levels.mjs    档位规则（supportedLevels / effortsFor / pickDefaultLevel
 lib/catalog.mjs   定位 DSH 安装目录 + 读取 pi-ai 目录
 lib/presets.mjs   40+ 供应商元数据（apiKeyEnv / 中文名 / 文档链接）
 lib/patch.mjs     cordis.patch.yml 读写（保留注释、自动备份）
-lib/audit.mjs     audit / fix / init 三个核心算法
+lib/audit.mjs     audit / check / fix / init 四个核心算法
 lib/recipes.mjs   家族规则（目录里没有的 glm-* / claude-* 型号靠它兜底）
 lib/autofix.mjs   启动时自动体检 + 只补不覆盖地修复配置（写前 .bak，写后记日志）
 lib/render.mjs    文本与 markdown 渲染
 lib/index.mjs     插件入口（reasoning_presets 工具 + 启动自动补齐）
-bin/cli.mjs       命令行
+bin/cli.mjs       命令行（root / list / audit / check / fix / init）
+test/             node:test 用例（levels / audit / patch / recipes / autofix / check，32 项）
 docs/PLUMBING.md  机制详解：reasoningEfforts 语义、目录继承、compat 白名单、各家 wire 差异
 ```
 
@@ -284,6 +317,7 @@ Custom routes must **declare** `reasoningEfforts` (level → wire value) by hand
 - 🧭 **List** — print the real level matrix for 41 providers (also generates `docs/MATRIX.md`)
 - 🧬 **Family recipes** — relay / brand-new models the catalog has never seen (`claude-sonnet-5-5`, `glm-5.3-flashx`) still get protocol, levels and a default
 - 🛡 **Safe** — dry-run by default, timestamped `.bak` before every write, and `apply()` never throws (so DSH never reports the plugin as failed)
+- 🚦 **CI-friendly** — `dsh-reasoning check` answers one question ("is the config still in sync?") and exits 1 when it is not
 
 ### 🚀 Four ways to use it
 
@@ -292,6 +326,14 @@ Custom routes must **declare** `reasoningEfforts` (level → wire value) by hand
 Node ≥ 20. The profile patch file is watched by DSH's HMR layer, so **no restart needed**.
 
 ```bash
+# no clone needed
+npm i -g dsh-reasoning-presets
+# or one-off
+npx dsh-reasoning-presets audit
+# if npm does not have it yet (unpublished / slow mirror), install from GitHub
+npm i -g github:tancy9527/dsh-reasoning-presets
+
+# from source
 git clone https://github.com/tancy9527/dsh-reasoning-presets.git
 cd dsh-reasoning-presets
 
@@ -301,7 +343,26 @@ node bin/cli.mjs fix           # 3. dry-run the repair
 node bin/cli.mjs fix --write   # 4. apply (auto .bak backup)
 ```
 
-Install globally: `npm i -g .` → then `dsh-reasoning audit`.
+Installed globally: `dsh-reasoning audit`, `dsh-reasoning check`, `dsh-reasoning fix --write`.
+
+#### A+. In CI (drift fails the build)
+
+`check` never modifies anything; it only decides whether the config still matches what the catalog / family rules would declare:
+
+```bash
+dsh-reasoning check                    # exit 0 when clean, 1 on drift
+dsh-reasoning check --strict           # treat info-level notes (e.g. the extra "Default" entry) as drift too
+dsh-reasoning check --json             # machine readable: { clean, strict, drift[], summary }
+```
+
+```yaml
+# .github/workflows/reasoning.yml (example)
+- run: npm i -g dsh-reasoning-presets
+- run: dsh-reasoning check --patch ./ci/cordis.patch.yml
+```
+
+> Point `--patch` at a version-controlled patch file — no DSH install required.
+> Level inference reads the pi-ai catalog, so give `--dsh-root` a directory that has `@earendil-works/pi-ai` installed (or `npm i @earendil-works/pi-ai` first).
 
 #### B. As a DSH plugin (beginner path: install → restart → slider appears)
 
@@ -413,6 +474,7 @@ Full 41-provider matrix: [`docs/MATRIX.md`](docs/MATRIX.md) (generated by `dsh-r
 | `dsh-reasoning root` | Print detected DSH root, pi-ai dir and profile patch path |
 | `dsh-reasoning list [--all] [--markdown]` | Provider level matrix (recommended routes by default) |
 | `dsh-reasoning audit [--markdown] [--json]` | Audit the profile and list issues |
+| `dsh-reasoning check [--strict] [--json]` | Drift check: exit 0 when clean, 1 on drift (CI / pre-commit) |
 | `dsh-reasoning fix [--write] [--effort high] [--no-default]` | Repair; dry-run unless `--write` |
 | `dsh-reasoning init <id…> [--write]` | Create catalog-inheriting routes |
 
@@ -447,6 +509,10 @@ Real requests through the exact code path DSH uses (`dsh-llm-pi-ai` → pi-ai
   `apply()` the way startup does produced one log line ("已自动补齐 11 处推理等级配置"), left all 5 GLM and 5 Claude models
   with levels and both routes with a default, wrote a `.bak` plus `cordis.patch.reasoning-presets.log`, and the result
   validated against `dsh-llm-pi-ai`'s own `Config`. Running it a second time returns `clean` with byte-identical files (idempotent).
+- **`check` was run against the real config too:** the current profile returns `✓ 配置干净` with `exit=0`; stripping every
+  level declaration from the same file returns `✗ 有 11 处需要处理` with `exit=1` (10 `MISSING_LEVELS` plus route-level
+  `NO_DEFAULT`). By default only actionable/risky items (warn level) fail the check; `--strict` also fails on info-level
+  notes such as the extra "Default" pseudo-choice.
 
 ### ❓ FAQ
 
@@ -465,7 +531,7 @@ For config edits, no — the profile `cordis.patch.yml` is watched and hot-reloa
 Every `--write` saves `cordis.patch.yml.<ISO timestamp>.bak` first. Always dry-run first.
 
 **`node --test` fails with `spawn EPERM`?**
-That happens inside sandboxed environments. Run the files directly: `node test/levels.test.mjs`, `node test/audit.test.mjs`, `node test/patch.test.mjs`, `node test/recipes.test.mjs`, `node test/autofix.test.mjs` — 27 assertions total.
+That happens inside sandboxed environments. Run the files directly: `node test/levels.test.mjs`, `node test/audit.test.mjs`, `node test/patch.test.mjs`, `node test/recipes.test.mjs`, `node test/autofix.test.mjs`, `node test/check.test.mjs` — 32 assertions total.
 
 **Upgrading an existing install from the same `github:` spec fails with `ambiguous-install`.**
 That is how DSH's installer identifies the target: it diffs the spec strings in the profile's `package.json`. Reinstalling the
@@ -480,12 +546,13 @@ lib/levels.mjs    level rules (supportedLevels / effortsFor / pickDefaultLevel)
 lib/catalog.mjs   locate the DSH install + load the pi-ai catalog
 lib/presets.mjs   40+ provider metadata (env var / display name / docs)
 lib/patch.mjs     cordis.patch.yml read/write (keeps comments, makes backups)
-lib/audit.mjs     audit / fix / init algorithms
+lib/audit.mjs     audit / check / fix / init algorithms
 lib/recipes.mjs   family recipes for model ids the catalog does not ship
 lib/autofix.mjs   startup audit + additive repair (.bak before writing, log after)
 lib/render.mjs    text and markdown rendering
 lib/index.mjs     plugin entry (reasoning_presets tool + startup auto-repair)
-bin/cli.mjs       CLI
+bin/cli.mjs       CLI (root / list / audit / check / fix / init)
+test/             node:test suites (levels / audit / patch / recipes / autofix / check, 32 assertions)
 docs/PLUMBING.md  internals: reasoningEfforts semantics, inheritance, compat gates, wire differences
 ```
 

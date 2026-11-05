@@ -1,9 +1,20 @@
 {
 	"name": "dsh-reasoning-presets",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "DSH（DeepSeek Harness）推理等级预设：让 GLM / Claude / GPT / Gemini / Kimi / Qwen 等主流模型在模型菜单里都有可拖动的推理等级，并自动修正缺档位的 llm-pi-ai 配置。",
 	"type": "module",
 	"main": "./lib/index.mjs",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/tancy9527/dsh-reasoning-presets.git"
+	},
+	"homepage": "https://github.com/tancy9527/dsh-reasoning-presets#readme",
+	"bugs": {
+		"url": "https://github.com/tancy9527/dsh-reasoning-presets/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"exports": {
 		".": "./lib/index.mjs",
 		"./cli": "./bin/cli.mjs",
@@ -42,9 +53,14 @@
 		"deepseek-harness",
 		"reasoning-effort",
 		"thinking-level",
+		"reasoning",
+		"thinking",
 		"pi-ai",
 		"glm",
-		"llm"
+		"llm",
+		"cli",
+		"ci",
+		"config-audit"
 	],
 	"license": "MIT"
 }

@@ -5,6 +5,7 @@
  *   dsh-reasoning root            打印探测到的 DSH / pi-ai 目录
  *   dsh-reasoning list            列目录里各厂商可选的推理档位
  *   dsh-reasoning audit           体检 profile：谁有滑块、谁缺
+ *   dsh-reasoning check           漂移检查：脏就 exit 1（给 CI / pre-commit 用）
  *   dsh-reasoning fix --write     给缺档位的路由补 reasoningEfforts / compat / 默认档
  *   dsh-reasoning init zai openai 新增路由（继承目录，天然有滑块）
  *
@@ -17,7 +18,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { loadCatalog } from "../lib/catalog.mjs";
-import { auditDoc, fixDoc, initDoc } from "../lib/audit.mjs";
+import { auditDoc, checkDoc, fixDoc, initDoc } from "../lib/audit.mjs";
 import { readPatchFile, stringifyPatch, writePatchFile } from "../lib/patch.mjs";
 import {
 	renderAuditMarkdown,
@@ -25,6 +26,7 @@ import {
 	renderCatalogMarkdown,
 	renderCatalogText,
 	renderChanges,
+	renderCheckText,
 } from "../lib/render.mjs";
 
 const HELP = `用法：dsh-reasoning <命令> [参数]
@@ -33,6 +35,7 @@ const HELP = `用法：dsh-reasoning <命令> [参数]
   root                     打印探测到的 DSH 安装目录与 pi-ai 目录
   list                     列出 pi-ai 目录里各厂商的推理档位（--all 显示全部 41 家）
   audit                    体检当前 profile 的 llm-pi-ai 配置
+  check                    漂移检查：配置落后于目录/家族规则就非零退出（给 CI 用）
   fix                      给缺档位的路由补 reasoningEfforts / compat / 默认档
   init <provider...>       新增路由（路由 id 与 pi-ai 目录同名即可继承全部档位）
   help                     显示本帮助
@@ -42,6 +45,7 @@ const HELP = `用法：dsh-reasoning <命令> [参数]
   --patch <file>           直接指定 cordis.patch.yml
   --dsh-root <dir>         DSH 安装目录（含 node_modules/@earendil-works/pi-ai）
   --write                  真的写盘（不写就只打印，等价 dry-run）
+  --strict                 check 时把提示级（info）也算漂移
   --effort <level>         指定默认档，默认自动选 high→medium→max→low
   --no-default             不要自动补默认档
   --markdown               以 markdown 输出（方便贴 issue / README）
@@ -140,6 +144,20 @@ async function main() {
 				? renderAuditMarkdown(report, { profile: file })
 				: renderAuditText(report, { profile: file, root: catalog.origin }),
 		);
+		return;
+	}
+
+	if (command === "check") {
+		const strict = options.flags.has("strict");
+		const result = checkDoc(patch.doc, catalog, { strict });
+		if (options.flags.has("json")) {
+			process.stdout.write(
+				`${JSON.stringify({ clean: result.clean, strict, drift: result.drift, summary: result.report.summary }, null, 2)}\n`,
+			);
+		} else {
+			process.stdout.write(renderCheckText(result, { file, strict }));
+		}
+		if (!result.clean) process.exitCode = 1;
 		return;
 	}
 

@@ -2,6 +2,8 @@ node_modules/
 *.bak
 *.bak.*
 .tmp*/
+.npm-cache/
+*.tgz
 .DS_Store
 Thumbs.db
 *.log
