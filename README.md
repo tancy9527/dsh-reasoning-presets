@@ -67,20 +67,26 @@ node bin/cli.mjs fix --write   # 4. 真写，自动生成 cordis.patch.yml.<时�
 
 想全局可用：`npm i -g .`，之后直接 `dsh-reasoning audit`。
 
-#### 路径 B：作为 DSH 插件
+#### 路径 B：作为 DSH 插件（小白推荐：装 → 重启 → 滑条出现）
 
-仓库已经带了 `cordis.patch.yml` 与 `dsh.bundle.patch`，装进 profile 后会多一个 `reasoning_presets` 工具，直接让模型自己体检/修复：
+仓库已经带了 `cordis.patch.yml` 与 `dsh.bundle.patch`，装进 profile 后会多一个 `reasoning_presets` 工具，并**在每次启动时自动体检补齐配置**：
+
+- **图形界面**：设置 → 插件 → 添加插件，填 `https://github.com/tancy9527/dsh-reasoning-presets`（对话框也支持 `github:tancy9527/dsh-reasoning-presets` 与本地目录）。
+- **命令行 / 让 agent 代办**：
 
 ```
 plugin_manager install_bundle  target: github:tancy9527/dsh-reasoning-presets
 ```
 
-（或让 agent 帮你调这条。装完 `package.json` 里会出现 `"dsh-reasoning-presets": "github:tancy9527/dsh-reasoning-presets"`，
-并且 node_modules 里落地的是本仓库的发布文件。）
+装完 `package.json` 里会出现 `"dsh-reasoning-presets": "github:tancy9527/dsh-reasoning-presets"`，node_modules 里落地的是本仓库的发布文件。
 
-⚠️ **bundle 是「启动时装载」的**：安装/升级后 DSH 会返回 `application: restart-required`，**重启一次 DSH**
-那个 `reasoning_presets` 工具才会出现在会话里。只想要滑条、不想要工具的话，不必装 bundle —— 用路径 A 的 CLI 即可，
-改完 `cordis.patch.yml` 由 HMR 热更，**不重启就能看到菜单里的档位**。
+⚠️ **bundle 是「启动时装载」的**：安装/升级后 DSH 返回 `application: restart-required`，**重启一次 DSH** 才生效。
+
+✅ **重启之后就结束了**：插件启动时会自动跑一遍体检，把缺档位的路由补上（只补不覆盖：你手写过的 `reasoningEfforts` / `reasoning` 原样保留），
+写盘前留 `cordis.patch.yml.<ISO时间戳>.bak`，并把改动记进同目录的 `cordis.patch.reasoning-presets.log`。
+幂等——已经完整就完全不写盘。不想要这个行为，在 profile 的 patch 条目里加 `config: { autoFix: false }` 即可。
+
+只想改配置、不装 bundle 也完全可以（路径 A：CLI 改完由 HMR 热更，不重启就见效）。
 
 工具参数：`action`（`list` / `audit` / `fix` / `init`）、`providers[]`、`effort`、`write`、`applyDefault`、`profile`、`dshRoot`。
 
@@ -195,6 +201,10 @@ node bin/cli.mjs fix --write    # 目录优先 + 家族兜底，一次补齐
   `package.json` 指向 github 规格、`node_modules/dsh-reasoning-presets` 里是仓库文件；把装好的包 import 进来、
   用假 ctx 调 `apply()`，`reasoning_presets` 工具注册成功，`audit`/`list` 都能正常跑出报告
   （agent 侧调用需重启 DSH 一次，见路径 B 的说明）。
+- **自动补齐也实跑了**：把真实 profile 的 patch 复制一份、剥掉全部档位声明，再按启动流程调 `apply()`
+  → 一条日志「已自动补齐 11 处推理等级配置」，落盘后 5 个 GLM 型号 + 5 个 Claude 型号都有档位、两条路由都有默认档，
+  同时生成 `.bak` 与 `cordis.patch.reasoning-presets.log`；补齐结果用 `dsh-llm-pi-ai` 的 `Config` 校验通过。
+  再启动一次则返回 `clean`、文件字节不变（幂等）。
 
 ### ❓ FAQ
 
@@ -213,7 +223,7 @@ A：改配置文件不用——profile 的 `cordis.patch.yml` 在 HMR 监听列�
 A：`--write` 每次都会先存 `cordis.patch.yml.<ISO时间戳>.bak`；dry-run 永远可以先用。
 
 **Q：为什么我的 `node --test` 报 `spawn EPERM`？**
-A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等四个文件，共 24 项断言。
+A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等五个文件，共 27 项断言。
 
 ### 🗂 仓库结构
 
@@ -224,8 +234,9 @@ lib/presets.mjs   40+ 供应商元数据（apiKeyEnv / 中文名 / 文档链接�
 lib/patch.mjs     cordis.patch.yml 读写（保留注释、自动备份）
 lib/audit.mjs     audit / fix / init 三个核心算法
 lib/recipes.mjs   家族规则（目录里没有的 glm-* / claude-* 型号靠它兜底）
+lib/autofix.mjs   启动时自动体检 + 只补不覆盖地修复配置（写前 .bak，写后记日志）
 lib/render.mjs    文本与 markdown 渲染
-lib/index.mjs     插件入口（reasoning_presets 工具）
+lib/index.mjs     插件入口（reasoning_presets 工具 + 启动自动补齐）
 bin/cli.mjs       命令行
 docs/PLUMBING.md  机制详解：reasoningEfforts 语义、目录继承、compat 白名单、各家 wire 差异
 ```
@@ -286,20 +297,27 @@ node bin/cli.mjs fix --write   # 4. apply (auto .bak backup)
 
 Install globally: `npm i -g .` → then `dsh-reasoning audit`.
 
-#### B. As a DSH plugin
+#### B. As a DSH plugin (beginner path: install → restart → slider appears)
 
-The repo ships `cordis.patch.yml` + `dsh.bundle.patch`, so installing it into a profile exposes a `reasoning_presets` tool — let the agent audit and repair itself:
+The repo ships `cordis.patch.yml` + `dsh.bundle.patch`, so installing it into a profile exposes a `reasoning_presets` tool **and runs an audit + additive repair on every startup**:
+
+- **GUI**: Settings → Plugins → Add plugin, paste `https://github.com/tancy9527/dsh-reasoning-presets` (the dialog also takes `github:tancy9527/dsh-reasoning-presets` and local directories).
+- **CLI / let your agent do it**:
 
 ```
 plugin_manager install_bundle  target: github:tancy9527/dsh-reasoning-presets
 ```
 
-(Or ask your agent to run it.) The profile's `package.json` then points at the GitHub spec and
-`node_modules/dsh-reasoning-presets` holds this repo's published files.
+The profile's `package.json` then points at the GitHub spec and `node_modules/dsh-reasoning-presets` holds this repo's published files.
 
-⚠️ **Bundles load at startup.** Installation/upgrade returns `application: restart-required`, so **restart DSH once**
-before the `reasoning_presets` tool shows up in a session. If you only want the slider and no tool, skip the bundle:
-use path A — the CLI edits `cordis.patch.yml`, HMR hot-reloads it, and the menu levels appear without a restart.
+⚠️ **Bundles load at startup.** Installation/upgrade returns `application: restart-required`, so **restart DSH once**.
+
+✅ **After the restart you are done.** On load the plugin repairs routes that lack levels — additively only: hand-written
+`reasoningEfforts` / `reasoning` are left untouched; every write first saves `cordis.patch.yml.<ISO timestamp>.bak`
+and appends the changes to `cordis.patch.reasoning-presets.log` next to it. It is idempotent: a clean profile is never rewritten.
+Disable the behaviour with `config: { autoFix: false }` on the patch entry.
+
+You can also skip the bundle entirely (path A): the CLI edits `cordis.patch.yml`, HMR hot-reloads it, no restart needed.
 
 Tool arguments: `action` (`list` / `audit` / `fix` / `init`), `providers[]`, `effort`, `write`, `applyDefault`, `profile`, `dshRoot`.
 
@@ -419,6 +437,10 @@ Real requests through the exact code path DSH uses (`dsh-llm-pi-ai` → pi-ai
   package, the profile's `package.json` now points at the GitHub spec, and importing the installed copy with a stub
   ctx registered `reasoning_presets` and ran `audit` / `list` successfully. The agent-facing call needs one DSH restart
   (see path B) because bundles load at startup.
+- **Auto-repair was exercised as well:** copying the real profile patch, stripping every level declaration, and driving
+  `apply()` the way startup does produced one log line ("已自动补齐 11 处推理等级配置"), left all 5 GLM and 5 Claude models
+  with levels and both routes with a default, wrote a `.bak` plus `cordis.patch.reasoning-presets.log`, and the result
+  validated against `dsh-llm-pi-ai`'s own `Config`. Running it a second time returns `clean` with byte-identical files (idempotent).
 
 ### ❓ FAQ
 
@@ -437,7 +459,7 @@ For config edits, no — the profile `cordis.patch.yml` is watched and hot-reloa
 Every `--write` saves `cordis.patch.yml.<ISO timestamp>.bak` first. Always dry-run first.
 
 **`node --test` fails with `spawn EPERM`?**
-That happens inside sandboxed environments. Run the files directly: `node test/levels.test.mjs`, `node test/audit.test.mjs`, `node test/patch.test.mjs`, `node test/recipes.test.mjs` — 24 assertions total.
+That happens inside sandboxed environments. Run the files directly: `node test/levels.test.mjs`, `node test/audit.test.mjs`, `node test/patch.test.mjs`, `node test/recipes.test.mjs`, `node test/autofix.test.mjs` — 27 assertions total.
 
 ### 🗂 Layout
 
@@ -448,8 +470,9 @@ lib/presets.mjs   40+ provider metadata (env var / display name / docs)
 lib/patch.mjs     cordis.patch.yml read/write (keeps comments, makes backups)
 lib/audit.mjs     audit / fix / init algorithms
 lib/recipes.mjs   family recipes for model ids the catalog does not ship
+lib/autofix.mjs   startup audit + additive repair (.bak before writing, log after)
 lib/render.mjs    text and markdown rendering
-lib/index.mjs     plugin entry (reasoning_presets tool)
+lib/index.mjs     plugin entry (reasoning_presets tool + startup auto-repair)
 bin/cli.mjs       CLI
 docs/PLUMBING.md  internals: reasoningEfforts semantics, inheritance, compat gates, wire differences
 ```
