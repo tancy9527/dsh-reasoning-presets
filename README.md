@@ -1,215 +1,353 @@
-# dsh-reasoning-presets
+# 🎚 dsh-reasoning-presets
 
-给 [DSH（DeepSeek Harness）](https://github.com/deepseek-ai) 补齐「推理等级」滑块：
-**GLM / Claude / GPT / Gemini / Kimi / Qwen / Grok / DeepSeek 等主流模型，接进来就能在模型菜单里拖档位。**
+**让你的 DSH 模型菜单真正出现「推理等级」滑块 —— 不只是 GLM，41 家主流供应商全都适配。**
 
-DSH 4.x 的模型菜单里，DeepSeek 官方模型下面有一条「推理等级」（`Low / High / Max` 之类）。一旦你换成自己接的模型——尤其是智谱 GLM 这种"官方目录里没有同名供应商"的——这条滑块就直接消失了，只剩下模型名。
+**Make the reasoning-effort slider show up for every model in DSH — GLM, Claude, GPT, Gemini, DeepSeek and 36 more.**
 
-本仓库解决的问题只有一个：**让这条滑块回来，并且对主流模型都能用。**
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org)
+[![DSH](https://img.shields.io/badge/DSH-%E2%89%A52.0.0-5B4CF5.svg)](https://github.com/deepseek-ai)
+[![platform](https://img.shields.io/badge/platform-win%20%7C%20macOS%20%7C%20linux-lightgrey.svg)](#)
 
-```console
-$ node bin/cli.mjs audit
-DSH 推理等级审计
-路由 2 条（目录继承 0 / 手写 2）· 可修模型 3 · 警告 3
+[中文](#-中文) · [English](#-english)
 
-✓ glm                    手写模型
-                        openai-completions · 4 个模型 · 默认档 high
-                        https://open.bigmodel.cn/api/paas/v4
-   glm-5.2                    关闭/低/高/最大                手写声明
-   glm-5.3                    低/高/最大                     手写声明
-   ...
+---
 
-✗ claude                 手写模型
-                        anthropic-messages · 5 个模型 · 默认档未设置
-   claude-fable-5             极简/低/中/高/极高/最大        缺档位 · 可修（取自 anthropic 目录）
-   ...
+## 🇨🇳 中文
+
+### 问题不在滑块，而在配置
+
+你在 `cordis.patch.yml` 里接上了 GLM，能用、能聊，但模型菜单里就是没有那一行「推理等级」。很多人以为是缺个 UI 插件——**不是**。菜单那一行完全由配置驱动：
+
+> DSH 只有在**模型描述符带 `reasoning.efforts`** 时，才会渲染推理等级行；而这个描述符来自 `llm-pi-ai` 适配器对 pi-ai 模型目录的解析。
+
+```mermaid
+flowchart LR
+  A["cordis.patch.yml<br/>providers.&lt;路由&gt;"] --> B["llm-pi-ai<br/>resolveRouteModels()"]
+  C["pi-ai 内置目录<br/>41 家供应商"] --> B
+  B --> D["模型描述符<br/>reasoning.efforts"]
+  D --> E["模型菜单<br/>推理等级滑块 🎚"]
 ```
 
----
+于是有两种结局：
 
-## 30 秒根因
+| 你的路由 | 目录是否认识 | 结果 |
+| --- | --- | --- |
+| `id: deepseek` / `openai` / `anthropic` … | ✅ 同名 → 元数据自动继承 | 滑块直接出现 |
+| `id: glm` / `id: my-proxy` … | ❌ 目录里没有 → `reasoning: false` | **没有滑块，且无从设置** |
 
-模型菜单里的档位不是 UI 画的，也不是插件能"加"出来的——它来自**模型描述里的 `reasoning.efforts`**。
-在 `@deepseek-ai/dsh-llm-pi-ai` 这一层，这个字段由配置里的 **`reasoningEfforts`** 决定：
+自定义路由必须**手写** `reasoningEfforts`（档位 → 线上取值），必要时再补 `compat`（各家 chat 协议的思考参数长得都不一样）。写错一个字段，要么滑块不出现，要么请求 400。
 
-| 写法 | 结果 |
-| --- | --- |
-| 模型条目里没有 `reasoningEfforts` | DSH 判定该模型 **`reasoning: false`** → 菜单里**没有**推理等级 |
-| `reasoningEfforts: { low: "low", high: "high", max: "max" }` | 菜单出现 **低 / 高 / 最大** 三档 |
-| 键是档位名，值是发给厂商的**线上取值**（可与键不同，例如 `max: "high"`） | 灵活适配各家奇怪的命名 |
-| `reasoningEfforts: false` | 明确声明"这是非推理模型" |
+**这个仓库就是把这件事自动化**：从你本机安装的 pi-ai 目录里读出真实能力，体检你的 profile，把该写的东西补上。
 
-为什么 GLM 会踩坑：`llm-pi-ai` 解析配置时，**只有路由 id 与 pi-ai 内置供应商同名时**才会回填目录里的推理信息。
-智谱 GLM 在 pi-ai 里的 id 是 `zai` / `zai-coding-cn`；你写成 `glm`，就成了自定义路由 → 没有目录可继承 → 模型全部退化成非推理模型 → 滑块消失。
+### ✨ 它能做什么
 
-所以修复方式有两条，本仓库都支持：
+- 🔍 **体检**：一条命令看清每条路由、每个模型到底支不支持推理、支持哪几档、有没有默认档
+- 🩹 **修复**：缺 `reasoningEfforts` / 缺 `api` / 缺 `compat` / 缺默认档，全部自动补齐，逐条列出改动
+- 🧱 **新建**：`init` 直接生成一条「继承目录」的干净路由，从源头避免手写错误
+- 🧭 **查询**：`list` 打印 41 家供应商的真实档位矩阵（也生成 `docs/MATRIX.md`）
+- 🛡 **安全**：默认 dry-run；`--write` 前自动备份 `.bak`；`apply()` 绝不抛错，不会把 DSH 卡成「Failed to load plugins」
 
-1. **路由改叫 `zai`**（或 `deepseek` / `openai` …），模型和档位全部继承 pi-ai 目录 —— 零维护；
-2. 保留自定义路由 `glm`，但给每个模型**显式写 `reasoningEfforts`** —— 本仓库 CLI 会自动从目录里查出正确档位并填好。
+### 🚀 三条使用路径
 
----
+#### 路径 A：命令行（最快，改完即生效）
 
-## 快速开始
+需要 Node ≥ 20。DSH 的 profile 补丁在 HMR 监听列表里，**写完自动生效，不用重启**。
 
-### 方式一：命令行体检（推荐先跑这个）
-
-```console
-# 克隆到任意位置
-git clone https://github.com/<you>/dsh-reasoning-presets.git
+```bash
+git clone https://github.com/tancy9527/dsh-reasoning-presets.git
 cd dsh-reasoning-presets
 
-# 1. 看看现在哪些模型有滑块、哪些缺
-node bin/cli.mjs audit
-
-# 2. 预演修复（不写盘）
-node bin/cli.mjs fix
-
-# 3. 真的写进去（会先生成带时间戳的 .bak 备份）
-node bin/cli.mjs fix --write
-
-# 4. 想新增一家供应商：只写 4 行，模型和档位全部继承目录
-node bin/cli.mjs init deepseek openai anthropic google xai --write
+node bin/cli.mjs root      # 1. 确认探测到了 DSH 安装目录与 profile
+node bin/cli.mjs audit     # 2. 体检：谁有滑块、谁没有
+node bin/cli.mjs fix       # 3. 预演修复（不写盘）
+node bin/cli.mjs fix --write   # 4. 真写，自动生成 cordis.patch.yml.<时间戳>.bak
 ```
 
-改完 **不用重启 DSH**：profile 里的 `cordis.patch.yml` 在 DSH 的 HMR 监听列表里，保存即生效，模型菜单随即出现档位。
+想全局可用：`npm i -g .`，之后直接 `dsh-reasoning audit`。
 
-默认操作 `%USERPROFILE%\.dsh\profiles\desktop\cordis.patch.yml`；多 profile 用 `--profile`，或 `--patch <文件>` 直接指定。
+#### 路径 B：作为 DSH 插件
 
-### 方式二：装成 DSH 插件
+仓库已经带了 `cordis.patch.yml` 与 `dsh.bundle.patch`，装进 profile 后会多一个 `reasoning_presets` 工具，直接让模型自己体检/修复：
 
-仓库带 `dsh.bundle.patch`，可由 DSH 作为 bundle 安装（插件面板安装本地路径，或让 agent 调 `plugin_manager install_bundle`）。装好后多一个只读为主的工具 `reasoning_presets`：
-
-```text
-reasoning_presets action=audit
-reasoning_presets action=fix write=true
-reasoning_presets action=init providers=["deepseek","openai","anthropic"] write=true
-reasoning_presets action=list
+```jsonc
+// profile 的 package.json → dsh.bundles
+"dsh-reasoning-presets"
 ```
 
-它本身**不改 UI、不接管菜单**——滑块的来源始终是配置里的 `reasoningEfforts`。
+工具参数：`action`（`list` / `audit` / `fix` / `init`）、`providers[]`、`effort`、`write`、`applyDefault`、`profile`、`dshRoot`。
 
-### 方式三：手改 YAML
+#### 路径 C：只想抄一段 YAML
 
-`~/.dsh/profiles/desktop/cordis.patch.yml`，找到 `llm-pi-ai` 条目，在 `config.providers` 下：
+**① 自定义路由（例如智谱 GLM）——必须手写**
 
 ```yaml
 - id: llm-pi-ai
   name: "@deepseek-ai/dsh-llm-pi-ai"
   config:
     providers:
-      # ① 自定义路由：必须自己写档位
       glm:
-        displayName: GLM
         apiKeyEnv: GLM_API_KEY
-        api: openai-completions          # 注意不是 openai-responses，见 docs/PLUMBING.md
+        api: openai-completions          # 智谱思考参数是 chat 协议带的，不是 responses
         baseURL: https://open.bigmodel.cn/api/paas/v4
-        reasoning: high                  # 默认档；不写的话菜单会多一项「Default」
+        reasoning: high                  # 默认档；不写菜单会多出一项 "Default"
         compat:
-          thinkingFormat: zai
+          thinkingFormat: zai            # 关键：走 zai 的 thinking/reasoning_effort 分支
           supportsReasoningEffort: true
           maxTokensField: max_tokens
           supportsStore: false
+          supportsDeveloperRole: false
+          supportsStrictMode: true
         models:
-          - id: glm-5.2
-            name: GLM-5.2
+          - id: glm-5.3                  # 5.3 系列：官方禁止关闭思考
+            reasoningEfforts: { low: low, high: high, max: max }
+          - id: glm-5.2                  # 5.2 系列：可以关
             reasoningEfforts: { off: none, low: low, high: high, max: max }
-          - id: glm-5.3
-            name: GLM-5.3
-            reasoningEfforts: { low: low, high: high, max: max }   # 5.3 不能关闭思考
-
-      # ② 路由名与 pi-ai 目录同名：模型和档位全部继承，一行模型都不用写
-      deepseek:
-        apiKeyEnv: DEEPSEEK_API_KEY
-        reasoning: high
 ```
 
----
+**② 目录里已有的供应商——只要路由 id 同名，什么都不用写**
 
-## 支持的主流模型（节选）
+```yaml
+      deepseek:                # id 与 pi-ai 目录同名
+        apiKeyEnv: DEEPSEEK_API_KEY
+        reasoning: high        # 默认档；档位继承目录，滑块自动出现
+      anthropic:
+        apiKeyEnv: ANTHROPIC_API_KEY
+        reasoning: medium
+```
 
-档位为「在该供应商下能选到的等级」。全量 41 家见 [docs/MATRIX.md](docs/MATRIX.md)。
+> 目录里的 `thinkingLevelMap` / `compat` 会自动回填，你不写反而更准。
 
-| 供应商 id | 名称 | 档位 |
+### 📊 常见供应商的真实档位
+
+| 供应商（路由 id） | 档位 | 备注 |
 | --- | --- | --- |
-| `zai` | Z.AI（GLM 国际站） | 关闭 / 极简 / 低 / 中 / 高 / 最大 |
-| `zai-coding-cn` | Z.AI Coding（国内套餐） | 关闭 / 极简 / 低 / 中 / 高 / 最大 |
-| `deepseek` | DeepSeek 官方 API | 关闭 / 低 / 高 / 最大 |
-| `anthropic` | Anthropic Claude | 关闭 / 极简 / 低 / 中 / 高 / 极高 / 最大 |
-| `openai` | OpenAI | 关闭 / 极简 / 低 / 中 / 高 / 极高 / 最大 |
-| `google` | Google Gemini | 关闭 / 极简 / 低 / 中 / 高 |
-| `xai` | xAI Grok | 关闭 / 低 / 中 / 高 / 极高 |
-| `moonshotai` | Moonshot / Kimi | 关闭 / 极简 / 低 / 中 / 高 / 最大 |
-| `qwen-token-plan-cn` | 阿里云 Qwen | 关闭 / 极简 / 低 / 中 / 高 / 极高 / 最大 |
-| `openrouter` | OpenRouter 聚合 | 关闭 / 极简 / 低 / 中 / 高 / 极高 / 最大 |
+| `openai` | 关闭 / 极简 / 低 / 中 / 高 / 极高 / 最大 | responses 协议 |
+| `anthropic` | 关闭 / 极简 / 低 / 中 / 高 / 极高 / 最大 | anthropic-messages |
+| `google` | 关闭 / 极简 / 低 / 中 / 高 | 没有极高/最大 |
+| `xai` | 关闭 / 低 / 中 / 高 / 极高 | |
+| `deepseek` | 关闭 / 低 / 高 / 最大 | |
+| `moonshotai` / `-cn` | 关闭 / 极简 / 低 / 中 / 高 / 最大 | |
+| `qwen-token-plan` / `-cn` | 关闭 / 极简 / 低 / 中 / 高 / 极高 / 最大 | |
+| `zai`（智谱） | 关闭 / 低 / 高 / 最大 | |
+| `zai-coding-cn` | 低 / 高 / 最大 | 禁关 |
+| `minimax` / `cerebras` / `together` … | 视型号而定 | `list --all` 看全表 |
 
-> 表里的档位来自你本机安装的 pi-ai 目录（`node_modules/@earendil-works/pi-ai`），
-> 版本不同可能略有出入——以 `node bin/cli.mjs list` 的输出为准。
+完整 41 家矩阵：[`docs/MATRIX.md`](docs/MATRIX.md)（由 `dsh-reasoning list --markdown --all` 生成）。
 
----
-
-## 命令参考
+### 🧰 命令参考
 
 | 命令 | 作用 |
 | --- | --- |
-| `root` | 打印探测到的 DSH 安装目录 / pi-ai 目录 / 补丁文件 |
-| `list [--all] [--markdown]` | 列目录里各供应商的档位 |
-| `audit [--json] [--markdown]` | 体检 profile：谁有滑块、谁缺、为什么缺 |
-| `fix [--write] [--effort high] [--no-default]` | 补 `reasoningEfforts` / `api` / `compat` / 默认档 |
-| `init <id...> [--write] [--base-url id=url,...]` | 按供应商 id 新增路由（继承目录） |
+| `dsh-reasoning root` | 打印探测到的 DSH 安装目录、pi-ai 目录、profile 补丁路径 |
+| `dsh-reasoning list [--all] [--markdown]` | 供应商档位矩阵（默认只列推荐路由） |
+| `dsh-reasoning audit [--markdown] [--json]` | 体检当前 profile，列出问题与可修项 |
+| `dsh-reasoning fix [--write] [--effort high] [--no-default]` | 补齐配置；默认 dry-run |
+| `dsh-reasoning init <id…> [--write]` | 新建继承目录的路由 |
 
-公共参数：`--profile <dir>`、`--patch <file>`、`--dsh-root <dir>`、`--markdown`、`--json`。
-`--dsh-root` 省略时会依次探测 `DSH_APP_ROOT`、`%LOCALAPPDATA%\Programs\DSH Desktop\resources\app`、
-`%ProgramFiles%\DSH Desktop\resources\app`、macOS 的 `/Applications/DSH Desktop.app/Contents/Resources/app` 等。
+通用参数：`--profile <dir>`、`--patch <file>`、`--dsh-root <dir>`、`--base-url id=url`（覆盖 `baseURL`，用于中转站）。
 
----
+### ❓ FAQ
 
-## 常见问题
+**Q：为什么菜单里多了一项「Default」？**
+A：「Default」不是档位，是 `defaultEffort` 缺失时 DSH 自动补的伪选项——选中它意味着**请求里不带任何 effort**，由服务商决定。对「禁止关闭思考」的型号（GLM-5.3 系列等）这有 400 风险。给路由写上 `reasoning: high` 即可让它消失。
 
-**菜单里为什么会多出一项「Default」？**
-当模型没有默认档（配置里没有 `reasoning`）时，DSH 会额外给一项「Default」，选中它等于**不发送任何 effort**。
-对 GLM-5.3 这种"禁止关闭思考"的模型，这可能被厂商直接 400 拒绝。本仓库的 `fix` 会自动补一个默认档（默认 `high`），
-补了之后「Default」就不再出现。
+**Q：我用的是中转站 / 自建代理，模型 id 目录里没有怎么办？**
+A：两条路：路由 id 用目录原名（保留继承），只用 `baseURL` 指向中转站；或完全自定义路由并手写 `reasoningEfforts` + `compat`。`fix` 会按模型 id 去目录里找最近的名字帮你填。
 
-**GLM-5.3 系列为什么没有「关闭」？**
-智谱官方文档明确：GLM-5.3 / 5.3-Flash / 5.3-FlashX **不再支持关闭思考**，`thinking.type` 传 `disabled` 会报错；
-`reasoning_effort` 也**只接受 `low` / `high` / `max`**。所以本仓库对这三款只声明这三档。GLM-5.2 仍支持 `none`（= 关闭）。
+**Q：改完要重启 DSH 吗？**
+A：不用。profile 的 `cordis.patch.yml` 在 HMR 监听列表里，保存即热更新。
 
-**报 429 是不是档位配错了？**
-多半不是。智谱在**余额不足 / 无可用资源包**时也返回 HTTP 429（`{"error":{"code":"1113",...}}`），
-容易被当成限流。先看响应体里的 `code`：`1113` = 欠费，`1305` = 真·限流。
+**Q：改坏了怎么办？**
+A：`--write` 每次都会先存 `cordis.patch.yml.<ISO时间戳>.bak`；dry-run 永远可以先用。
 
-**为什么不干脆全部用 `zai` 路由？**
-当然可以，而且更省事。`init` 就是这么干的。保留自定义 `glm` 路由的价值在于：多个 baseURL / 多把 key / 只挑部分模型时更清晰。
+**Q：为什么我的 `node --test` 报 `spawn EPERM`？**
+A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等三个文件，共 18 项断言。
 
-**会不会改坏我的配置？**
-写盘前先复制 `<文件>.<ISO时间戳>.bak`；解析失败直接报错不写；所有修复都是"只加不改"（你已显式写过的字段不覆盖）。
-另外 `fix` 的入参文档是深拷贝，dry-run 与 `--json` 都不碰文件。
-
-**Windows 上写入被沙箱拦？**
-DSH 默认 workspace-write 策略只允许写工作区。要么在本仓库目录外手动跑 `fix --write`，
-要么让 agent 用 danger-full-access 重试那一次写入。
-
----
-
-## 目录结构
+### 🗂 仓库结构
 
 ```
-lib/levels.mjs    档位语义：supportedLevels / effortsFor / pickDefaultLevel（对齐 pi-ai 判据）
-lib/catalog.mjs   读本机 pi-ai 目录（41 家供应商、模型、thinkingLevelMap）
-lib/presets.mjs   厂商中文名 / API Key 环境变量 / 推荐路由
-lib/patch.mjs     cordis.patch.yml 的解析、序列化、备份写入
-lib/audit.mjs     体检与修复的纯函数（不碰 IO）
-lib/render.mjs    文本 / markdown 渲染
-lib/index.mjs     DSH 插件入口（reasoning_presets 工具）
+lib/levels.mjs    档位规则（supportedLevels / effortsFor / pickDefaultLevel）
+lib/catalog.mjs   定位 DSH 安装目录 + 读取 pi-ai 目录
+lib/presets.mjs   40+ 供应商元数据（apiKeyEnv / 中文名 / 文档链接）
+lib/patch.mjs     cordis.patch.yml 读写（保留注释、自动备份）
+lib/audit.mjs     audit / fix / init 三个核心算法
+lib/render.mjs    文本与 markdown 渲染
+lib/index.mjs     插件入口（reasoning_presets 工具）
 bin/cli.mjs       命令行
-docs/PLUMBING.md  机制细节：继承规则、reasoningEfforts、compat 白名单、各家 wire 差异
-docs/MATRIX.md    全量厂商档位矩阵（由 list 生成）
+docs/PLUMBING.md  机制详解：reasoningEfforts 语义、目录继承、compat 白名单、各家 wire 差异
 ```
 
-想深入了解 DSH 是怎么把 `reasoningEfforts` 变成菜单项的，看 [docs/PLUMBING.md](docs/PLUMBING.md)。
+### 📚 想搞清楚原理？
+
+读 [`docs/PLUMBING.md`](docs/PLUMBING.md)。里面有 `resolveRouteModels` 的继承规则、`reasoningEfforts` 的三种特殊值（`false` / `null` / 缺省）、各协议 compat 白名单，以及常见报错信息的对照表。
+
+### 📄 License
+
+MIT © 2026 tancy9527
 
 ---
 
-## License
+## 🇬🇧 English
 
-MIT
+### The slider is a config problem, not a UI problem
+
+You wired GLM into `cordis.patch.yml`. It answers. But the model menu never shows a **reasoning effort** row. It is easy to assume a UI plugin is missing — it is not. That row is rendered purely from data:
+
+> DSH renders the effort row only when the **model descriptor carries `reasoning.efforts`** — and that descriptor is produced by the `llm-pi-ai` adapter from the bundled pi-ai model catalog.
+
+So there are only two outcomes:
+
+| Your route id | Known to the catalog? | Result |
+| --- | --- | --- |
+| `deepseek`, `openai`, `anthropic`, … | ✅ same id → metadata inherited | slider appears |
+| `glm`, `my-proxy`, … | ❌ unknown → `reasoning: false` | **no slider, nothing to pick** |
+
+Custom routes must **declare** `reasoningEfforts` (level → wire value) by hand, plus `compat` where the vendor's chat protocol spells thinking differently. One wrong field and you either get no slider or a `400`.
+
+**This repo automates that**: read the real capabilities from the pi-ai catalog shipped with your DSH install, audit your profile, and write back exactly what is missing.
+
+### ✨ What it does
+
+- 🔍 **Audit** — one command tells you, per route and per model, whether reasoning works, which levels exist, and whether a default is set
+- 🩹 **Fix** — missing `reasoningEfforts` / `api` / `compat` / default effort are filled in, with a changelog
+- 🧱 **Init** — generate clean catalog-inheriting routes instead of hand-writing them
+- 🧭 **List** — print the real level matrix for 41 providers (also generates `docs/MATRIX.md`)
+- 🛡 **Safe** — dry-run by default, timestamped `.bak` before every write, and `apply()` never throws (so DSH never reports the plugin as failed)
+
+### 🚀 Three ways to use it
+
+#### A. CLI (fastest — takes effect immediately)
+
+Node ≥ 20. The profile patch file is watched by DSH's HMR layer, so **no restart needed**.
+
+```bash
+git clone https://github.com/tancy9527/dsh-reasoning-presets.git
+cd dsh-reasoning-presets
+
+node bin/cli.mjs root          # 1. show detected install dir + profile patch
+node bin/cli.mjs audit         # 2. who has a slider, who doesn't
+node bin/cli.mjs fix           # 3. dry-run the repair
+node bin/cli.mjs fix --write   # 4. apply (auto .bak backup)
+```
+
+Install globally: `npm i -g .` → then `dsh-reasoning audit`.
+
+#### B. As a DSH plugin
+
+The repo ships `cordis.patch.yml` + `dsh.bundle.patch`, so installing it into a profile exposes a `reasoning_presets` tool — let the agent audit and repair itself:
+
+```jsonc
+// profile package.json → dsh.bundles
+"dsh-reasoning-presets"
+```
+
+Tool arguments: `action` (`list` / `audit` / `fix` / `init`), `providers[]`, `effort`, `write`, `applyDefault`, `profile`, `dshRoot`.
+
+#### C. Just copy the YAML
+
+**① Custom route (e.g. Zhipu GLM) — must be written by hand**
+
+```yaml
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      glm:
+        apiKeyEnv: GLM_API_KEY
+        api: openai-completions          # Zhipu carries thinking in the chat protocol, not responses
+        baseURL: https://open.bigmodel.cn/api/paas/v4
+        reasoning: high                  # default level; omit it and a "Default" pseudo-entry appears
+        compat:
+          thinkingFormat: zai            # key: route through zai's thinking / reasoning_effort branch
+          supportsReasoningEffort: true
+          maxTokensField: max_tokens
+          supportsStore: false
+          supportsDeveloperRole: false
+          supportsStrictMode: true
+        models:
+          - id: glm-5.3                  # 5.3 family cannot disable thinking
+            reasoningEfforts: { low: low, high: high, max: max }
+          - id: glm-5.2                  # 5.2 family can
+            reasoningEfforts: { off: none, low: low, high: high, max: max }
+```
+
+**② Providers already in the catalog — inherit by keeping the route id**
+
+```yaml
+      deepseek:                # same id as the pi-ai catalog
+        apiKeyEnv: DEEPSEEK_API_KEY
+        reasoning: high        # default level; levels + compat inherited
+      anthropic:
+        apiKeyEnv: ANTHROPIC_API_KEY
+        reasoning: medium
+```
+
+> The catalog's own `thinkingLevelMap` / `compat` are more accurate than anything you would type.
+
+### 📊 Level matrix (highlights)
+
+| Provider (route id) | Levels | Notes |
+| --- | --- | --- |
+| `openai` | off / minimal / low / medium / high / xhigh / max | responses protocol |
+| `anthropic` | off / minimal / low / medium / high / xhigh / max | anthropic-messages |
+| `google` | off / minimal / low / medium / high | no xhigh/max |
+| `xai` | off / low / medium / high / xhigh | |
+| `deepseek` | off / low / high / max | |
+| `moonshotai` (±`-cn`) | off / minimal / low / medium / high / max | |
+| `qwen-token-plan` (±`-cn`) | off / minimal / low / medium / high / xhigh / max | |
+| `zai` | off / low / high / max | |
+| `zai-coding-cn` | low / high / max | cannot disable |
+
+Full 41-provider matrix: [`docs/MATRIX.md`](docs/MATRIX.md) (generated by `dsh-reasoning list --markdown --all`).
+
+### 🧰 Command reference
+
+| Command | Purpose |
+| --- | --- |
+| `dsh-reasoning root` | Print detected DSH root, pi-ai dir and profile patch path |
+| `dsh-reasoning list [--all] [--markdown]` | Provider level matrix (recommended routes by default) |
+| `dsh-reasoning audit [--markdown] [--json]` | Audit the profile and list issues |
+| `dsh-reasoning fix [--write] [--effort high] [--no-default]` | Repair; dry-run unless `--write` |
+| `dsh-reasoning init <id…> [--write]` | Create catalog-inheriting routes |
+
+Shared flags: `--profile <dir>`, `--patch <file>`, `--dsh-root <dir>`, `--base-url id=url` (for proxies/relays).
+
+### ❓ FAQ
+
+**Why does my menu show an extra "Default" entry?**
+It is not a level. When `defaultEffort` is missing, DSH adds a pseudo-choice that sends **no effort at all** and lets the provider decide. For models that forbid disabling thinking (GLM-5.3 family, …) that risks a `400`. Set `reasoning: high` on the route and it disappears.
+
+**I use a relay / self-hosted proxy and my model ids aren't in the catalog.**
+Keep the catalog provider id as the route id (so metadata is inherited) and only point `baseURL` at the relay — or define a fully custom route and declare `reasoningEfforts` + `compat`. `fix` looks up the closest catalog id for you.
+
+**Do I need to restart DSH?**
+No. The profile `cordis.patch.yml` is watched; saving hot-reloads it.
+
+**What if I break something?**
+Every `--write` saves `cordis.patch.yml.<ISO timestamp>.bak` first. Always dry-run first.
+
+**`node --test` fails with `spawn EPERM`?**
+That happens inside sandboxed environments. Run the files directly: `node test/levels.test.mjs`, `node test/audit.test.mjs`, `node test/patch.test.mjs` — 18 assertions total.
+
+### 🗂 Layout
+
+```
+lib/levels.mjs    level rules (supportedLevels / effortsFor / pickDefaultLevel)
+lib/catalog.mjs   locate the DSH install + load the pi-ai catalog
+lib/presets.mjs   40+ provider metadata (env var / display name / docs)
+lib/patch.mjs     cordis.patch.yml read/write (keeps comments, makes backups)
+lib/audit.mjs     audit / fix / init algorithms
+lib/render.mjs    text and markdown rendering
+lib/index.mjs     plugin entry (reasoning_presets tool)
+bin/cli.mjs       CLI
+docs/PLUMBING.md  internals: reasoningEfforts semantics, inheritance, compat gates, wire differences
+```
+
+### 📚 Want the internals?
+
+Read [`docs/PLUMBING.md`](docs/PLUMBING.md): `resolveRouteModels` inheritance, the three special `reasoningEfforts` values (`false` / `null` / absent), per-protocol `compat` allow-lists, and a mapping of the error messages you will hit.
+
+### 📄 License
+
+MIT © 2026 tancy9527
