@@ -47,6 +47,7 @@ flowchart LR
 - 🧱 **新建**：`init` 直接生成一条「继承目录」的干净路由，从源头避免手写错误
 - 🧭 **查询**：`list` 打印 41 家供应商的真实档位矩阵（也生成 `docs/MATRIX.md`）
 - 🧬 **家族规则**：目录里查不到的型号（中转站的 `claude-sonnet-5-5`、新的 `glm-5.3-flashx`）按厂商家族补齐协议 / 档位 / 默认档，不用翻文档
+- 🎚 **自带滑条**：插件同时带一个客户端半边，在输入框右下角画一条常驻可拖动滑条，换档只发一次请求，**不再依赖 `dsh-codex-effort-slider` 等第三方滑条插件**
 - 🛡 **安全**：默认 dry-run；`--write` 前自动备份 `.bak`；`apply()` 绝不抛错，不会把 DSH 卡成「Failed to load plugins」
 - 🚦 **可进 CI**：`dsh-reasoning check` 只回答「干不干净」，有漂移就 exit 1 —— 配置和模型目录脱节时构建直接失败
 
@@ -116,7 +117,19 @@ plugin_manager install_bundle  target: github:tancy9527/dsh-reasoning-presets
 
 只想改配置、不装 bundle 也完全可以（路径 A：CLI 改完由 HMR 热更，不重启就见效）。
 
-工具参数：`action`（`list` / `audit` / `fix` / `init`）、`providers[]`、`effort`、`write`、`applyDefault`、`profile`、`dshRoot`。
+工具参数：`action`（`list` / `audit` / `check` / `fix` / `init`）、`providers[]`、`effort`、`strict`、`write`、`applyDefault`、`profile`、`dshRoot`。
+
+#### 🎚 自带滑条（不用再装第三方滑条插件）
+
+模型菜单里的「推理等级」是官方的一列档位按钮；本插件**额外**在输入框右下角（官方插槽 `conversation.input.right`）画一条常驻迷你滑条：
+
+- 一条轨道 + 当前档名：**拖动 / 点击 / 左右方向键**都能换档；拖动途中只动画面，**松手才写回一次**
+- 只对「真的有多档」的模型出现（档位 < 2 时完全不渲染）；模型没有默认档时也不渲染 —— 宁可不显示，也不显示假档位
+- 读写走官方服务 `ctx.modelDirectories`（`select({provider, model, reasoningEffort})`），**不改写官方菜单 DOM**，所以 DSH 升级不会把它弄坏
+- 切换失败（`session/writer-held`、上游 400 等）会自动回滚，并把错误码放进悬停提示
+- 与 `dsh-codex-effort-slider` 这类「改写模型菜单那一行」的插件**互不冲突**：它们改菜单，我们加输入框工具行；你也可以只装我们这一个
+
+> 客户端半边同样是**启动时装载**的：改完/升级后重启一次 DSH 才会出现。只想改配置的话用路径 A，与滑条无关。不想看见滑条：不装 bundle（只用 CLI）即可。
 
 #### 路径 C：一条命令适配「目录里没有的型号」
 
@@ -237,6 +250,10 @@ node bin/cli.mjs fix --write    # 目录优先 + 家族兜底，一次补齐
 - **`check` 也在真实配置上跑过**：当前 profile → `✓ 配置干净`，`exit=0`；把同一份配置的档位声明全部剥掉后 →
   `✗ 有 11 处需要处理`（10 条 `MISSING_LEVELS` + 2 条 `NO_DEFAULT` 中的路由级），`exit=1`。
   默认只拦「该修 / 有风险」的（warn 级），`--strict` 才会把「只是菜单多一个 Default 伪项」这类提示级也算脏。
+- **滑条（客户端半边）**：`lib/client.js` 用假 `window.__ModuleLoader__` + 假 React 在 Node 里装配过一遍——
+  bundle id、`inject` 五个服务、插槽 `conversation.input.right` 上的注册（id/order/label）、`apply()` 在
+  「目录服务缺失 / 注册抛错」两种故障下都不外泄异常，全部通过；档位快照解析、拖拽落点映射、写回入参由
+  7 项纯函数断言覆盖。它**不改写官方菜单 DOM**，只读写官方 `modelDirectories` 服务。
 
 ### ❓ FAQ
 
@@ -254,8 +271,12 @@ A：改配置文件不用——profile 的 `cordis.patch.yml` 在 HMR 监听列�
 **Q：改坏了怎么办？**
 A：`--write` 每次都会先存 `cordis.patch.yml.<ISO时间戳>.bak`；dry-run 永远可以先用。
 
+**Q：还需要装 `dsh-codex-effort-slider` 之类的滑条插件吗？**
+A：不需要。本插件的客户端半边会在输入框右下角画一条可拖动滑条，档位来源就是它自己补进配置的 `reasoningEfforts`。
+两者也可以共存（对方改的是模型菜单那一行，我们加的是输入框工具行），互不干扰。滑条只在「该模型确实有 ≥ 2 个档位」时出现。
+
 **Q：为什么我的 `node --test` 报 `spawn EPERM`？**
-A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等六个文件，共 32 项断言。
+A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等七个文件，共 39 项断言。
 
 **Q：已经装过旧版，再用同一个 `github:` 地址升级时报 `ambiguous-install`？**
 A：这是 DSH 插件管理器的判定方式导致的：它靠「profile `package.json` 里依赖的 spec 字符串有没有变」来识别本次装的是哪个包。
@@ -275,8 +296,9 @@ lib/recipes.mjs   家族规则（目录里没有的 glm-* / claude-* 型号靠�
 lib/autofix.mjs   启动时自动体检 + 只补不覆盖地修复配置（写前 .bak，写后记日志）
 lib/render.mjs    文本与 markdown 渲染
 lib/index.mjs     插件入口（reasoning_presets 工具 + 启动自动补齐）
+lib/client.js     客户端半边：输入框工具行上的可拖动滑条（零构建、不改官方 DOM）
 bin/cli.mjs       命令行（root / list / audit / check / fix / init）
-test/             node:test 用例（levels / audit / patch / recipes / autofix / check，32 项）
+test/             node:test 用例（levels / audit / patch / recipes / autofix / check / client，39 项）
 docs/PLUMBING.md  机制详解：reasoningEfforts 语义、目录继承、compat 白名单、各家 wire 差异
 ```
 
@@ -316,6 +338,7 @@ Custom routes must **declare** `reasoningEfforts` (level → wire value) by hand
 - 🧱 **Init** — generate clean catalog-inheriting routes instead of hand-writing them
 - 🧭 **List** — print the real level matrix for 41 providers (also generates `docs/MATRIX.md`)
 - 🧬 **Family recipes** — relay / brand-new models the catalog has never seen (`claude-sonnet-5-5`, `glm-5.3-flashx`) still get protocol, levels and a default
+- 🎚 **Its own slider** — the plugin also ships a client half: a always-on, draggable slider in the composer's right-hand tool row. One request per release, **no `dsh-codex-effort-slider` required**
 - 🛡 **Safe** — dry-run by default, timestamped `.bak` before every write, and `apply()` never throws (so DSH never reports the plugin as failed)
 - 🚦 **CI-friendly** — `dsh-reasoning check` answers one question ("is the config still in sync?") and exits 1 when it is not
 
@@ -386,7 +409,21 @@ Disable the behaviour with `config: { autoFix: false }` on the patch entry.
 
 You can also skip the bundle entirely (path A): the CLI edits `cordis.patch.yml`, HMR hot-reloads it, no restart needed.
 
-Tool arguments: `action` (`list` / `audit` / `fix` / `init`), `providers[]`, `effort`, `write`, `applyDefault`, `profile`, `dshRoot`.
+Tool arguments: `action` (`list` / `audit` / `check` / `fix` / `init`), `providers[]`, `effort`, `strict`, `write`, `applyDefault`, `profile`, `dshRoot`.
+
+#### 🎚 The bundled slider (no third-party slider plugin needed)
+
+The official effort row in the model menu is a list of level buttons. On top of that, this plugin draws a
+**compact, always-on draggable slider** in the composer's right-hand tool row (official slot `conversation.input.right`):
+
+- one rail plus the current level name: **drag / click / arrow keys** all work, and the value is written back **once, on release**
+- rendered only for models that really have ≥ 2 levels; a model without a default level shows nothing — better no slider than a fake one
+- reads and writes through the official `ctx.modelDirectories` service (`select({provider, model, reasoningEffort})`) and **never rewrites the official menu DOM**, so DSH upgrades cannot break it
+- a failed switch (`session/writer-held`, upstream `400`, …) rolls back and surfaces the error code in the tooltip
+- coexists with menu-rewriting plugins such as `dsh-codex-effort-slider` (they patch the menu row, we add a composer control) — or just use ours alone
+
+> The client half loads at startup as well, so restart DSH once after installing/upgrading. Config-only users (path A) never touch it.
+> Do not want the slider? Skip the bundle and use the CLI.
 
 #### C. One command for models the catalog has never heard of
 
@@ -513,6 +550,11 @@ Real requests through the exact code path DSH uses (`dsh-llm-pi-ai` → pi-ai
   level declaration from the same file returns `✗ 有 11 处需要处理` with `exit=1` (10 `MISSING_LEVELS` plus route-level
   `NO_DEFAULT`). By default only actionable/risky items (warn level) fail the check; `--strict` also fails on info-level
   notes such as the extra "Default" pseudo-choice.
+- **The slider (client half)** was assembled in Node with a fake `window.__ModuleLoader__` and a fake React: bundle id,
+  the five injected services, the registration on `conversation.input.right` (id / order / label), and `apply()` staying
+  fail-open when the directory service is missing or registration throws — all pass, plus 7 pure-function assertions for
+  snapshot parsing, drag-to-index mapping and the write-back payload. It never rewrites the official menu DOM; it only
+  talks to the official `modelDirectories` service.
 
 ### ❓ FAQ
 
@@ -530,8 +572,13 @@ For config edits, no — the profile `cordis.patch.yml` is watched and hot-reloa
 **What if I break something?**
 Every `--write` saves `cordis.patch.yml.<ISO timestamp>.bak` first. Always dry-run first.
 
+**Do I still need `dsh-codex-effort-slider` or another slider plugin?**
+No. The client half of this plugin draws a draggable slider in the composer's right-hand tool row, fed by the very
+`reasoningEfforts` it wrote into your config. Both can coexist (that one patches the model menu row, ours adds a composer
+control). The slider only appears for models that really expose ≥ 2 levels.
+
 **`node --test` fails with `spawn EPERM`?**
-That happens inside sandboxed environments. Run the files directly: `node test/levels.test.mjs`, `node test/audit.test.mjs`, `node test/patch.test.mjs`, `node test/recipes.test.mjs`, `node test/autofix.test.mjs`, `node test/check.test.mjs` — 32 assertions total.
+That happens inside sandboxed environments. Run the files directly: `node test/levels.test.mjs`, `node test/audit.test.mjs`, `node test/patch.test.mjs`, `node test/recipes.test.mjs`, `node test/autofix.test.mjs`, `node test/check.test.mjs`, `node test/client.test.mjs` — 39 assertions total.
 
 **Upgrading an existing install from the same `github:` spec fails with `ambiguous-install`.**
 That is how DSH's installer identifies the target: it diffs the spec strings in the profile's `package.json`. Reinstalling the
@@ -551,8 +598,9 @@ lib/recipes.mjs   family recipes for model ids the catalog does not ship
 lib/autofix.mjs   startup audit + additive repair (.bak before writing, log after)
 lib/render.mjs    text and markdown rendering
 lib/index.mjs     plugin entry (reasoning_presets tool + startup auto-repair)
+lib/client.js     client half: draggable slider in the composer tool row (no build step, no DOM rewriting)
 bin/cli.mjs       CLI (root / list / audit / check / fix / init)
-test/             node:test suites (levels / audit / patch / recipes / autofix / check, 32 assertions)
+test/             node:test suites (levels / audit / patch / recipes / autofix / check / client, 39 assertions)
 docs/PLUMBING.md  internals: reasoningEfforts semantics, inheritance, compat gates, wire differences
 ```
 
