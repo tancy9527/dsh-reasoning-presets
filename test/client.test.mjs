@@ -94,6 +94,8 @@ test("apply 在会话插槽上注册一条自己的条目", async () => {
   assert.equal(entry.id, exports.__internals.ENTRY_ID);
   assert.equal(typeof entry.label, "function");
   assert.equal(entry.label(), "推理等级");
+  assert.equal(typeof entry.inject, "function", "会话作用域插槽必须显式注入 sessionId");
+  assert.deepEqual(entry.inject("session-1"), { sessionId: "session-1" });
   assert.equal(typeof component, "function");
 });
 
