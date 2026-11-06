@@ -1,6 +1,6 @@
 {
 	"name": "dsh-reasoning-presets",
-	"version": "1.4.1",
+	"version": "1.4.2",
 	"description": "DSH（DeepSeek Harness）推理等级预设：让 GLM / Claude / GPT / Gemini / Kimi / Qwen 等主流模型在模型菜单里都有推理等级，并把菜单里「推理等级」那一行变成可拖动滑条（Codex 风格），同时自动修正缺档位的 llm-pi-ai 配置。",
 	"type": "module",
 	"main": "./lib/index.mjs",

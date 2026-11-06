@@ -484,3 +484,39 @@ test("桥：最高档点亮能量层并给数值文字上色，收起时还原�
   bridge.dispose();
   assert.equal(value.style.color, "", "收起后必须还原官方文字颜色");
 });
+
+test("与第三方滑条共存：同一行里已有的 ces-inline 被临时收起，卸载后还原", async () => {
+  const { exports } = await loadBundle();
+  const { createMenuBridge, makeDomOps, findForeignSlider } = exports.__internals;
+
+  const doc = makeDocument();
+  const { items } = makeOpenModelMenu(doc);
+  const row = items[1];
+
+  // 模拟 dsh-codex-effort-slider 已经挂在同一行里的容器
+  const foreign = doc.createElement("div");
+  foreign.setAttribute("class", "ces-inline");
+  foreign.style.display = "flex";
+  row.appendChild(foreign);
+
+  const ops = makeDomOps(doc);
+  assert.equal(findForeignSlider(ops, row), foreign, "应认出对方的容器");
+  assert.equal(findForeignSlider(ops, doc.createElement("div")), null);
+
+  const bridge = createMenuBridge({
+    ops,
+    win: { setInterval() {}, clearInterval() {} },
+    active: () => true,
+    onPick: () => {},
+  });
+  bridge.setLevels({ list: THREE_LEVELS, index: 1 });
+  bridge.start();
+
+  assert.equal(foreign.style.display, "none", "两条会同步，必须收起对方那条");
+  const host = row.children.find((child) => child.attrs["data-rp-part"] === "host");
+  assert.ok(host !== undefined, "我们自己的滑条仍然要挂上");
+
+  bridge.dispose();
+  assert.equal(foreign.style.display, "flex", "卸载后把对方还原成原样");
+  assert.equal(row.children.some((child) => child.attrs["data-rp-part"] === "host"), false);
+});

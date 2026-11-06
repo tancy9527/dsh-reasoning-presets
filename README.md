@@ -127,6 +127,7 @@ plugin_manager install_bundle  target: github:tancy9527/dsh-reasoning-presets
 - 只对「真的有多档」的模型出现（档位 < 2 时**完全不挂**，官方那一行保持原样）；不显示假档位
 - 读写走官方服务 `ctx.modelDirectories`（`select({provider, model, reasoningEffort})`）；对官方那一行只做**可逆的样式加高 + 追加一个容器**，关菜单/卸载时逐项还原，不碰官方 class 与 React 树
 - 同一时刻只有一个会话实例持有那一行（`data-rp-owner` 归属标记），不会两个滑条叠在一起
+- 与 `dsh-codex-effort-slider` 这类也改写同一行的插件**共存但不重叠**：发现对方的容器（`.ces-inline`）就把它临时收起（只动 `display`），卸载时原样还回去 —— 不会再出现「两条同步的滑条」
 - 切换失败（`session/writer-held`、上游 400 等）自动把旋钮退回真实档位，错误码写进悬停提示
 - 找不到已知的菜单形状时**什么都不做**并只 warn 一次，绝不连累官方菜单
 
@@ -257,7 +258,7 @@ node bin/cli.mjs fix --write    # 目录优先 + 家族兜底，一次补齐
   bundle id、`inject` 五个服务、插槽 `conversation.input.right` 上的注册（id/order/label）、`apply()` 在
   「目录服务缺失 / 注册抛错」两种故障下都不外泄异常；再拿一份「展开的席 + role=menu + 两个 menuitem」的假菜单验证：
   那一行被加高折行、滑条挂上去、拖动途中不提交 / 松手提交一次 / 落点相同不提交、最高档点亮能量层并给数值文字上色、
-  卸载后内联样式与 DOM 全部还原。共 9 项断言（全仓 41 项）。
+  卸载后内联样式与 DOM 全部还原。共 10 项断言（全仓 42 项）。
 
 ### ❓ FAQ
 
@@ -277,10 +278,13 @@ A：`--write` 每次都会先存 `cordis.patch.yml.<ISO时间戳>.bak`；dry-run
 
 **Q：还需要装 `dsh-codex-effort-slider` 之类的滑条插件吗？**
 A：不需要。本插件的客户端半边会把模型菜单里「推理等级」那一行就地换成可拖动滑条，档位来源就是它自己补进配置的 `reasoningEfforts`。
-如果你已经装着 `dsh-codex-effort-slider`，建议只留一个：两个都改写同一行时，它们靠 `data-rp-owner` / 各自的归属标记互斥，但视觉上会打架（先挂上的那个赢）。滑条只在「该模型确实有 ≥ 2 个档位」时出现。
+两个都装着也不会出现两条滑条：我们检测到对方的容器（`.ces-inline`）会把它临时收起（只改 `display`，卸载时还原），菜单里只留我们这一条。想换成对方那条，就卸掉我们（`plugin_manager remove_bundle` 或删掉 profile `package.json` 里的依赖后重装依赖）。滑条只在「该模型确实有 ≥ 2 个档位」时出现。
+
+**Q：为什么菜单里出现了两条一模一样的滑条？**
+A：1.4.2 之前会这样：两个插件都往官方那一行里 append 容器，且都读同一份档位快照，所以拖动时会「同步」。升级到 1.4.2 后我们会在挂载时（以及之后每次 DOM 变动时）收起对方的容器，卸载时再原样还回去；`test/client.test.mjs` 里有一个「与第三方滑条共存」的用例守着这个行为。
 
 **Q：为什么我的 `node --test` 报 `spawn EPERM`？**
-A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等七个文件，共 41 项断言。
+A：那是在沙箱环境里；直接跑文件即可：`node test/levels.test.mjs` 等七个文件，共 42 项断言。
 
 **Q：已经装过旧版，再用同一个 `github:` 地址升级时报 `ambiguous-install`？**
 A：这是 DSH 插件管理器的判定方式导致的：它靠「profile `package.json` 里依赖的 spec 字符串有没有变」来识别本次装的是哪个包。
@@ -302,7 +306,7 @@ lib/render.mjs    文本与 markdown 渲染
 lib/index.mjs     插件入口（reasoning_presets 工具 + 启动自动补齐）
 lib/client.js     客户端半边：把模型菜单「推理等级」那一行变成可拖动滑条（零构建、可逆挂载）
 bin/cli.mjs       命令行（root / list / audit / check / fix / init）
-test/             node:test 用例（levels / audit / patch / recipes / autofix / check / client，41 项）
+test/             node:test 用例（levels / audit / patch / recipes / autofix / check / client，42 项）
 docs/PLUMBING.md  机制详解：reasoningEfforts 语义、目录继承、compat 白名单、各家 wire 差异
 ```
 
