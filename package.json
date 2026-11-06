@@ -1,6 +1,6 @@
 {
 	"name": "dsh-reasoning-presets",
-	"version": "1.4.2",
+	"version": "1.4.3",
 	"description": "修好 DSH 里「选不了推理等级」的模型：按 pi-ai 目录与厂商家族规则补齐 llm-pi-ai 的 reasoningEfforts / compat / 默认档，并把模型菜单的「推理等级」那一行变成可拖动滑条。",
 	"type": "module",
 	"main": "./lib/index.mjs",

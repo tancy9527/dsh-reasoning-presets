@@ -520,3 +520,67 @@ test("与第三方滑条共存：同一行里已有的 ces-inline 被临时收�
   assert.equal(foreign.style.display, "flex", "卸载后把对方还原成原样");
   assert.equal(row.children.some((child) => child.attrs["data-rp-part"] === "host"), false);
 });
+
+/** 往菜单里追加一组 menuitemradio，模拟「档位子面板」展开。 */
+function makeLevelPane(doc, menu, names) {
+  const items = [];
+  for (const name of names) {
+    const item = doc.createElement("button");
+    item.setAttribute("role", "menuitemradio");
+    const label = doc.createElement("span");
+    label.setAttribute("class", "cellLabel");
+    label.textContent = name;
+    item.appendChild(label);
+    menu.appendChild(item);
+    items.push(item);
+  }
+  return items;
+}
+
+test("档位子面板：每一项按滑条渐变换色，收起后还原", async () => {
+  const { exports } = await loadBundle();
+  const { createMenuBridge, makeDomOps, findLevelPane } = exports.__internals;
+
+  const doc = makeDocument();
+  const { menu } = makeOpenModelMenu(doc);
+  const bridge = createMenuBridge({
+    ops: makeDomOps(doc),
+    win: { setInterval() {}, clearInterval() {} },
+    active: () => true,
+    onPick: () => {},
+    onState: () => {},
+  });
+  bridge.setLevels({ list: THREE_LEVELS, index: 1 });
+  bridge.start();
+
+  assert.equal(findLevelPane(makeDomOps(doc), THREE_LEVELS), null, "子面板没展开时不能认成档位面板");
+
+  // 模型子面板也是 menuitemradio，但标签是模型名，不该被误认
+  const modelItems = makeLevelPane(doc, menu, ["glm-5.3-flash", "claude-opus-5"]);
+  assert.equal(findLevelPane(makeDomOps(doc), THREE_LEVELS), null, "模型子面板不能当成档位面板");
+  bridge.paintLevelPane();
+  assert.equal(modelItems[0].style.color, undefined, "模型项不该被染色");
+  for (const item of modelItems) menu.removeChild(item);
+
+  // 档位子面板：低 → 蓝，高 → 蓝紫之间，最大 → 紫罗兰
+  const paneItems = makeLevelPane(doc, menu, ["低", "高", "最大", "Default"]);
+  const found = findLevelPane(makeDomOps(doc), THREE_LEVELS);
+  assert.ok(found !== null, "应认出档位子面板");
+  assert.equal(found.items.length, 3, "认不出名字的那一项（Default）不参与");
+
+  bridge.paintLevelPane();
+  assert.equal(paneItems[0].style.color, "rgb(77,147,248)", "最低档是滑条起点的蓝");
+  assert.equal(paneItems[2].style.color, "rgb(147,51,234)", "最高档是滑条终点的紫");
+  assert.match(paneItems[1].style.color, /^rgb\(/, "中间档取渐变中间色");
+  assert.equal(paneItems[3].style.color, undefined, "Default 不是档位，保持官方颜色");
+  const label = paneItems[0].children[0];
+  assert.equal(label.style.color, "rgb(77,147,248)", "文字 span 也要染色");
+
+  // 关掉子面板 → 颜色还原
+  for (const item of paneItems) menu.removeChild(item);
+  bridge.paintLevelPane();
+  assert.equal(paneItems[0].style.color, "", "收起后必须还原");
+  assert.equal(label.style.color, "", "文字 span 也要还原");
+
+  bridge.dispose();
+});

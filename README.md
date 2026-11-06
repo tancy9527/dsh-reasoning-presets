@@ -39,7 +39,7 @@ flowchart LR
 | --- | --- | --- |
 | **体检** | `audit` / `reasoning_presets` 工具 | 列出每条路由、每个型号是否支持推理、支持哪几档、缺什么 |
 | **补齐** | `fix --write` 或插件启动时自动执行 | 缺 `reasoningEfforts` / `api` / `compat` / 默认档，按目录与家族规则补上，逐条列出改动 |
-| **滑条** | 装成插件后自动生效 | 把菜单「推理等级」那一行就地变成可拖动滑条，拖动即换档 |
+| **滑条** | 装成插件后自动生效 | 把菜单「推理等级」那一行就地变成可拖动滑条，拖动即换档；档位弹窗按同一套渐变换色 |
 
 附带两个便于工程化的能力：`check` 只回答「配置还干不干净」（漂移即非零退出，可进 CI）；`init` 直接生成一条「继承目录」的干净路由。
 
@@ -50,7 +50,7 @@ flowchart LR
 #### 方式一：装成 DSH 插件（推荐）
 
 ```text
-plugin_manager install_bundle  target: github:tancy9527/dsh-reasoning-presets#v1.4.2
+plugin_manager install_bundle  target: github:tancy9527/dsh-reasoning-presets#v1.4.3
 ```
 
 也可以在图形界面里：设置 → 插件 → 添加插件 → 填 `https://github.com/tancy9527/dsh-reasoning-presets`。
@@ -112,6 +112,7 @@ node bin/cli.mjs fix --write   # 4. 真写（自动备份 .bak）
 - 档位读写全部走官方 `ctx.modelDirectories`：`select({ provider, model, reasoningEffort })`，失败自动回滚并显示错误码
 - 档位 < 2 的模型**完全不挂**（不显示假档位）；同一行用 `data-rp-owner` 标记归属，多会话不会叠出两条
 - 发现同一行已被别的滑条插件（`.ces-inline`）占用，就把对方容器临时 `display:none` 收起、卸载时还原，不会出现两条同步的滑条
+- 档位子面板（低 / 高 / 最大…）里每一项按滑条同一套渐变换色：最低档取轨道起点的蓝，最高档取终点的紫，中间档按位置插值；关掉子面板即还原官方颜色（认不出的项如「Default」不动）
 - 菜单结构不是已知形状时只 warn 一次，什么都不做
 
 > 观感参考了 MIT 许可的 [`dsh-codex-effort-slider`](https://github.com/Microqian2th/dsh-codex-effort-slider)（作者 Microqian2th）。本实现未复制其源码：无设置面板、无遥测、不注入 React 树，只用原生 DOM 可逆挂载，并按 DSH 别名 token 取色以适配明暗主题。
@@ -229,7 +230,7 @@ A：不会叠成两条。我们检测到同一行已被占用时会把对方容�
 A：那是在受限沙箱里；逐个文件跑即可：`node test/levels.test.mjs` 等七个文件。
 
 **Q：用同一个 `github:` 地址升级时报 `ambiguous-install`？**
-A：这是插件管理器靠「spec 字符串有没有变」识别安装目标导致的，文件其实已经更新。重启 DSH 即生效；想让它登记成一次安装，就换写法（如 `#v1.4.2`）或先移除再装。
+A：这是插件管理器靠「spec 字符串有没有变」识别安装目标导致的，文件其实已经更新。重启 DSH 即生效；想让它登记成一次安装，就换写法（如 `#v1.4.3`）或先移除再装。
 
 ### 仓库结构
 
@@ -296,7 +297,7 @@ The recommended path is to **install it as a DSH plugin**: restart once, and lat
 #### Option 1: install as a plugin (recommended)
 
 ```text
-plugin_manager install_bundle  target: github:tancy9527/dsh-reasoning-presets#v1.4.2
+plugin_manager install_bundle  target: github:tancy9527/dsh-reasoning-presets#v1.4.3
 ```
 
 Or in the GUI: Settings → Plugins → Add plugin → `https://github.com/tancy9527/dsh-reasoning-presets`.
@@ -339,7 +340,7 @@ Precedence: **same-id catalog > vendor catalog > family rules > aggregator catal
 
 **4. It also fills in the default level.** Without `reasoning:`, DSH adds a "Default" pseudo-choice meaning "send no effort" — a 400 risk for models that cannot disable thinking (GLM-5.3 family). `fix` therefore adds `reasoning: high` where it is missing.
 
-**5. The slider is a reversible client-side mount over the official service.** It locates the effort row (the second of the two `button[role="menuitem"]` rows in the menu's root pane), raises that row, allows wrapping, appends a container — and restores everything on close/unmount without touching official classes or the React tree. Level reads/writes go through `ctx.modelDirectories.select({ provider, model, reasoningEffort })`; failures roll back and surface the error code. Models with fewer than 2 levels render nothing; the row carries a `data-rp-owner` marker so concurrent sessions cannot double-mount; if another slider plugin (`.ces-inline`) owns the row, its container is temporarily `display:none` and restored on unmount.
+**5. The slider is a reversible client-side mount over the official service.** It locates the effort row (the second of the two `button[role="menuitem"]` rows in the menu's root pane), raises that row, allows wrapping, appends a container — and restores everything on close/unmount without touching official classes or the React tree. Level reads/writes go through `ctx.modelDirectories.select({ provider, model, reasoningEffort })`; failures roll back and surface the error code. Models with fewer than 2 levels render nothing; the row carries a `data-rp-owner` marker so concurrent sessions cannot double-mount; if another slider plugin (`.ces-inline`) owns the row, its container is temporarily `display:none` and restored on unmount. The level sub-panel is tinted with the same gradient as the track — the lowest level takes the track's start blue, the highest the end violet, intermediate levels interpolate by position — and reverts to the official colour when the sub-panel closes (unrecognised entries such as "Default" are left alone).
 
 > Visual design is inspired by the MIT-licensed [`dsh-codex-effort-slider`](https://github.com/Microqian2th/dsh-codex-effort-slider) (by Microqian2th). No source code was copied: no settings panel, no telemetry, no React-tree injection — just a reversible native-DOM mount themed with DSH alias tokens.
 
